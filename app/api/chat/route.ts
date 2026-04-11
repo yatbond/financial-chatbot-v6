@@ -1,5 +1,6 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { scanStructureSupabase, loadProjectDataSupabase, computeMetricsSupabase } from '@/lib/data/supabase-loader'
+import { NextRequest } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
+import { getConfig, normaliseFinancialType } from '@/lib/config/mappings'
 import { runQuery } from '@/lib/pipeline/index'
 import { tokenize } from '@/lib/pipeline/tokenizer'
 import { classify } from '@/lib/pipeline/classifier'
@@ -17,14 +18,58 @@ import type { DetailContext } from '@/lib/pipeline/formatter'
 import type { FinancialRow } from '@/lib/data/types'
 
 export const dynamic = 'force-dynamic'
+const API_VERSION = 'v6-direct-query'
 
-const API_VERSION = 'v6-20260411-RLS-fix'
-
-// In-memory session context for detail drill-down (per-project, ephemeral)
 const sessionContexts = new Map<string, DetailContext>()
 
-async function getProjectRows(projectId: string, year?: number, month?: number): Promise<FinancialRow[]> {
-  return loadProjectDataSupabase(projectId, year, month)
+function makeClient() {
+  const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL!
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  console.log('makeClient: serviceRole=', !!process.env.SUPABASE_SERVICE_ROLE_KEY, 'keyLen=', key.length)
+  return createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } })
+}
+
+async function loadRows(projectId: string, year?: number, month?: number): Promise<FinancialRow[]> {
+  const client = makeClient()
+  const cfg = getConfig()
+  let q = client.from('financial_data').select('*').eq('project_id', projectId)
+  if (year !== undefined) q = q.eq('year', year)
+  if (month !== undefined) q = q.eq('month', month)
+  const { data, error } = await q.limit(10000)
+  if (error) throw new Error(error.message)
+  if (!data) return []
+  return data.map((row: any) => ({
+    year: String(row.year),
+    month: String(row.month),
+    sheetName: row.sheet_name,
+    financialType: normaliseFinancialType(row.raw_financial_type || row.financial_type, cfg),
+    rawFinancialType: row.raw_financial_type || row.financial_type,
+    itemCode: row.item_code,
+    friendlyName: row.friendly_name,
+    category: row.category,
+    value: String(row.value ?? row.raw_value ?? ''),
+    matchStatus: row.match_status || '',
+    sourceFile: row.source_file || '',
+    sourceSubfolder: '',
+  }))
+}
+
+function calcMetrics(rows: FinancialRow[]) {
+  const gp = (term: string) => rows
+    .filter(r => r.sheetName === 'Financial Status' && r.rawFinancialType.toLowerCase().includes(term) && r.itemCode === '3')
+    .reduce((s, r) => s + (parseFloat(r.value) || 0), 0)
+  const gen = (item: string) => rows.find(r => r.sheetName === 'Financial Status' && r.financialType === 'General' && r.itemCode === item)?.value ?? ''
+  return {
+    'Business Plan GP': gp('business plan'),
+    'Projected GP': gp('projection'),
+    'WIP GP': gp('audit report'),
+    'Cash Flow': gp('cash flow'),
+    'Start Date': gen('Start Date'),
+    'Complete Date': gen('Complete Date'),
+    'Target Complete Date': gen('Target Complete Date'),
+    'Time Consumed (%)': gen('Time Consumed (%)'),
+    'Target Completed (%)': gen('Target Completed (%)'),
+  }
 }
 
 export async function POST(request: NextRequest) {
@@ -33,154 +78,80 @@ export async function POST(request: NextRequest) {
     const { action } = body
 
     if (action === 'getStructure') {
-      const { folders, projects } = await scanStructureSupabase()
+      const client = makeClient()
+      const { data: projectData } = await client.from('projects').select('*')
+      const { data: viewData } = await client.from('latest_month_per_project').select('project_id, year, month')
+      const folders: any = {}
+      const projects: any = {}
+      for (const v of (viewData || [])) {
+        const proj = (projectData || []).find((p: any) => p.project_id === v.project_id)
+        if (proj) {
+          projects[v.project_id] = { id: v.project_id, code: proj.project_code || v.project_id, name: proj.project_name, year: String(v.year), month: String(v.month), filename: v.project_id }
+          const folder = proj.folder_name || 'Uncategorized'
+          if (!folders[folder]) folders[folder] = []
+          folders[folder].push(v.project_id)
+        }
+      }
       return Response.json({ folders, projects, version: API_VERSION })
     }
 
     if (action === 'loadProject') {
       const { projectId, year, month } = body
-      const rows = await getProjectRows(projectId, year, month)
-      const metrics = await computeMetricsSupabase(projectId, year, month)
-
-      const uniqueItemCodes = [...new Set(rows.map(r => r.itemCode))].filter(Boolean).sort()
-      const uniqueDataTypes = [...new Set(rows.map(r => r.friendlyName))].filter(Boolean).sort()
-      
-      const allFinStatusGp3 = rows
-        .filter(r => r.sheetName === 'Financial Status' && r.itemCode === '3')
-      
-      const rawTypes = [...new Set(allFinStatusGp3.map(r => r.rawFinancialType))]
-      
-      const debugMetrics = allFinStatusGp3
-        .filter(r => {
-          const raw = (r.rawFinancialType || '').toLowerCase()
-          return raw.includes('business plan') || raw.includes('projection') || raw.includes('audit') || raw.includes('cash flow')
-        })
-        .map(r => ({ raw: r.rawFinancialType, norm: r.financialType, val: r.value }))
-      
-      const allFinStatusDebug = allFinStatusGp3.map(r => ({ 
-        raw: r.rawFinancialType, 
-        norm: r.financialType, 
-        val: r.value,
-        match: (r.rawFinancialType || '').toLowerCase().includes('business plan') || 
-               (r.rawFinancialType || '').toLowerCase().includes('projection') || 
-               (r.rawFinancialType || '').toLowerCase().includes('audit') || 
-               (r.rawFinancialType || '').toLowerCase().includes('cash flow')
-      }))
-
-      // Get raw Supabase data for comparison - use SERVICE ROLE key if available
-      const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-      const rawSupabaseData = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/financial_data?select=raw_financial_type,item_code&project_id=eq.${projectId}${year ? `&year=eq.${year}` : ''}${month ? `&month=eq.${month}` : ''}&sheet_name=eq.Financial%20Status&item_code=eq.3`, {
-        headers: { 
-          apikey: SUPABASE_KEY,
-          Authorization: `Bearer ${SUPABASE_KEY}`,
-          Prefer: 'count=exact'
-        }
-      }).then(r => r.json()).catch(() => [])
-
+      const rows = await loadRows(projectId, year, month)
+      const metrics = calcMetrics(rows)
+      const finStatus = rows.filter(r => r.sheetName === 'Financial Status' && r.itemCode === '3')
       return Response.json({
         version: API_VERSION,
         metrics,
         debug: {
           totalRows: rows.length,
-          projectId,
-          uniqueItemCodes,
-          uniqueDataTypes,
-          debugMetrics,
-          allFinStatusDebug,
-          rawTypesCount: rawTypes.length,
-          rawSupabaseData: Array.isArray(rawSupabaseData) ? rawSupabaseData.slice(0, 20) : rawSupabaseData,
-          rawSupabaseDataCount: Array.isArray(rawSupabaseData) ? rawSupabaseData.length : 0,
+          finStatusCount: finStatus.length,
+          finStatusTypes: finStatus.map(r => r.rawFinancialType),
+          usingServiceRole: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
         },
       })
     }
 
     if (action === 'metrics') {
       const { projectId, year, month } = body
-      const metrics = await computeMetricsSupabase(projectId, year, month)
-      return Response.json({ metrics, version: API_VERSION })
+      const rows = await loadRows(projectId, year, month)
+      return Response.json({ metrics: calcMetrics(rows), version: API_VERSION })
     }
 
     if (action === 'query') {
       const { projectId, year, month, question, context: rawContext } = body
-      const rows = await getProjectRows(projectId, year, month)
+      const rows = await loadRows(projectId, year, month)
       const context: DetailContext | null = rawContext ?? sessionContexts.get(projectId) ?? null
-
       const q = question.trim().toLowerCase()
-      const response = await dispatchQuery(q, rows, context, projectId)
-      return Response.json({ ...response, version: API_VERSION })
+      const resp = await dispatchQuery(q, rows, context, projectId)
+      return Response.json({ ...resp, version: API_VERSION })
     }
 
-    return Response.json({ error: `Unknown action: ${action}`, version: API_VERSION }, { status: 400 })
+    return Response.json({ error: `Unknown action: ${action}` }, { status: 400 })
   } catch (err) {
     console.error('[API error]', err)
-    const msg = err instanceof Error ? err.message : String(err)
-    return Response.json({ error: msg, version: API_VERSION }, { status: 500 })
+    return Response.json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 })
   }
 }
 
-async function dispatchQuery(
-  q: string,
-  rows: FinancialRow[],
-  context: DetailContext | null,
-  projectId: string,
-): Promise<{ response: string; candidates: object[]; context?: DetailContext }> {
-
-  if (q === 'shortcuts' || q === 'help') {
-    return { response: handleShortcuts(), candidates: [] }
-  }
-  if (q === 'type' || q === 'types') {
-    return { response: handleType(), candidates: [] }
-  }
-
-  if (q === 'analyze' || q === 'analyse') {
-    return { response: handleAnalyze(rows), candidates: [] }
-  }
-
-  if (q === 'risk') {
-    return { response: handleRisk(rows), candidates: [] }
-  }
-
-  if (q === 'cash flow' || q === 'cashflow' || q === 'cf') {
-    return { response: handleCashFlow(rows), candidates: [] }
-  }
-
+async function dispatchQuery(q: string, rows: FinancialRow[], context: DetailContext | null, projectId: string) {
+  if (q === 'shortcuts' || q === 'help') return { response: handleShortcuts(), candidates: [] }
+  if (q === 'type' || q === 'types') return { response: handleType(), candidates: [] }
+  if (q === 'analyze' || q === 'analyse') return { response: handleAnalyze(rows), candidates: [] }
+  if (q === 'risk') return { response: handleRisk(rows), candidates: [] }
+  if (q === 'cash flow' || q === 'cashflow' || q === 'cf') return { response: handleCashFlow(rows), candidates: [] }
   const tokens = classify(tokenize(q))
   const resolved = resolve(tokens)
-
-  if (resolved.command === 'compare') {
-    return { response: handleCompare(rows, resolved), candidates: [] }
-  }
-
-  if (resolved.command === 'trend') {
-    return { response: handleTrend(rows, resolved), candidates: [] }
-  }
-
-  if (resolved.command === 'list') {
-    const rest = q.replace(/^list\s*/, '').trim()
-    return { response: handleList(rows, rest || undefined), candidates: [] }
-  }
-
-  if (resolved.command === 'total') {
-    const rest = q.replace(/^total\s*/, '').trim()
-    return { response: handleTotal(rows, rest), candidates: [] }
-  }
-
+  if (resolved.command === 'compare') return { response: handleCompare(rows, resolved), candidates: [] }
+  if (resolved.command === 'trend') return { response: handleTrend(rows, resolved), candidates: [] }
+  if (resolved.command === 'list') return { response: handleList(rows, q.replace(/^list\s*/, '').trim() || undefined), candidates: [] }
+  if (resolved.command === 'total') return { response: handleTotal(rows, q.replace(/^total\s*/, '').trim()), candidates: [] }
   if (resolved.command === 'detail') {
-    const rest = q.replace(/^detail\s*/, '').trim()
-    const result = handleDetail(rows, rest || undefined, context)
-    if (result.context) {
-      sessionContexts.set(projectId, result.context)
-    }
+    const result = handleDetail(rows, q.replace(/^detail\s*/, '').trim() || undefined, context)
+    if (result.context) sessionContexts.set(projectId, result.context)
     return { response: result.response, candidates: [], context: result.context }
   }
-
   const result = runQuery(q, rows)
-  if (result.context) {
-    sessionContexts.set(projectId, result.context)
-  }
-  return {
-    response: result.response,
-    candidates: result.candidates,
-    context: result.context,
-  }
+  if (result.context) sessionContexts.set(projectId, result.context)
+  return { response: result.response, candidates: result.candidates, context: result.context }
 }
