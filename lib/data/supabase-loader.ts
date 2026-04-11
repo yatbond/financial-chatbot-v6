@@ -41,10 +41,11 @@ export async function scanStructureSupabase(): Promise<{ folders: FolderStructur
     if (proj) {
       projects[v.project_id] = {
         id: v.project_id,
+        code: proj.project_code || v.project_id,
         name: proj.project_name,
-        folder: proj.folder_name,
-        year: v.year,
-        month: v.month,
+        year: String(v.year),
+        month: String(v.month),
+        filename: v.project_id,
       }
       const folder = proj.folder_name || 'Uncategorized'
       if (!folders[folder]) folders[folder] = []
