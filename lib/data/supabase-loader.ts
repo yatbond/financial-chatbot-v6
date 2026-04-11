@@ -120,6 +120,13 @@ export async function computeMetricsSupabase(
 ): Promise<Metrics> {
   const rows = await loadProjectDataSupabase(projectId, year, month)
 
+  // DEBUG: log what we're working with
+  const finStatusRows = rows.filter(r => r.sheetName === 'Financial Status' && r.itemCode === '3')
+  console.log('DEBUG total rows:', rows.length, '| Financial Status item_code=3:', finStatusRows.length)
+  for (const r of finStatusRows) {
+    console.log('DEBUG row:', JSON.stringify({ sheet: r.sheetName, raw: r.rawFinancialType, norm: r.financialType, item: r.itemCode, val: r.value }))
+  }
+
   // v5-compatible: ALL GP metrics come from Financial Status sheet
   // using includes() matching on rawFinancialType
   const gpFromFinStatus = (rawTypeContains: string): number => {
@@ -128,6 +135,7 @@ export async function computeMetricsSupabase(
       r.rawFinancialType.toLowerCase().includes(rawTypeContains.toLowerCase()) &&
       r.itemCode === '3'
     )
+    console.log(`DEBUG gpFromFinStatus('${rawTypeContains}'): found ${matches.length} matches`)
     return matches.reduce((sum, r) => sum + (parseFloat(r.value) || 0), 0)
   }
 
