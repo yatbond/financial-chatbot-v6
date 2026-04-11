@@ -55,7 +55,7 @@ export async function POST(request: NextRequest) {
       
       console.log('DEBUG allFinStatusGp3 count:', allFinStatusGp3.length)
       console.log('DEBUG debugMetrics count:', debugMetrics.length)
-      console.log('DEBUG sample rows:', JSON.stringify(allFinStatusGp3.slice(0, 5).map(r => ({ sheet: r.sheetName, raw: r.rawFinancialType, item: r.itemCode })))
+      console.log('DEBUG sample rows:', JSON.stringify(allFinStatusGp3.slice(0, 5).map(r => ({ sheet: r.sheetName, raw: r.rawFinancialType, item: r.itemCode }))))
 
       return Response.json({
         metrics,
