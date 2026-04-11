@@ -101,7 +101,10 @@ export async function POST(request: NextRequest) {
       for (const v of (viewData || [])) {
         const proj = (projectData || []).find((p: any) => p.id === v.project_id)
         if (proj) {
-          projects[v.project_id] = { id: v.project_id, code: proj.code || v.project_id, name: proj.name, year: String(v.year), month: String(v.month), filename: v.project_id }
+          // Clean name: strip 'Financial Report YYYY-MM' suffix
+          let displayName = proj.name || ''
+          displayName = displayName.replace(/\s*Financial Report\s+\d{4}-\d{2}$/, '').trim() || proj.code || v.project_id
+          projects[v.project_id] = { id: v.project_id, code: proj.code || v.project_id, name: displayName, year: String(v.year), month: String(v.month), filename: v.project_id }
           const folder = 'Projects'
           if (!folders[folder]) folders[folder] = []
           folders[folder].push(v.project_id)
