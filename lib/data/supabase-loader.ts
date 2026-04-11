@@ -122,7 +122,7 @@ export async function computeMetricsSupabase(
 
   const getValue = (sheet: string, ftype: string, item: string): number => {
     const row = rows.find(r =>
-      r.sheetName === sheet &&
+      (r.sheetName === sheet || r.sheetName === ftype) &&
       r.financialType === ftype &&
       r.itemCode === item
     )
