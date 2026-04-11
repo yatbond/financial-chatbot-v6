@@ -120,16 +120,15 @@ export async function computeMetricsSupabase(
 ): Promise<Metrics> {
   const rows = await loadProjectDataSupabase(projectId, year, month)
 
-  const getValue = (sheet: string, ftype: string, item: string): number => {
+  // v5-compatible: ALL GP metrics come from Financial Status sheet
+  // using includes() matching on rawFinancialType
+  const gpFromFinStatus = (rawTypeContains: string): number => {
     const matches = rows.filter(r =>
-      (r.sheetName === sheet || r.sheetName === ftype) &&
-      r.financialType === ftype &&
-      r.itemCode === item
+      r.sheetName === 'Financial Status' &&
+      r.rawFinancialType.toLowerCase().includes(rawTypeContains.toLowerCase()) &&
+      r.itemCode === '3'
     )
-    // Prefer non-zero values when multiple matches exist
-    const nonZeroRow = matches.find(r => parseFloat(r.value) !== 0)
-    const row = nonZeroRow || matches[0]
-    return parseFloat(row?.value ?? '0') || 0
+    return matches.reduce((sum, r) => sum + (parseFloat(r.value) || 0), 0)
   }
 
   const getGeneral = (item: string): string => {
@@ -142,10 +141,10 @@ export async function computeMetricsSupabase(
   }
 
   return {
-    'Business Plan GP': getValue('Financial Status', 'Business Plan', '3'),
-    'Projected GP': getValue('Financial Status', 'Projection', '3'),
-    'WIP GP': getValue('Financial Status', 'WIP', '3'),
-    'Cash Flow': getValue('Financial Status', 'Cash Flow', '3'),
+    'Business Plan GP': gpFromFinStatus('business plan'),
+    'Projected GP': gpFromFinStatus('projection'),
+    'WIP GP': gpFromFinStatus('audit report'),
+    'Cash Flow': gpFromFinStatus('cash flow'),
     'Start Date': getGeneral('Start Date'),
     'Complete Date': getGeneral('Complete Date'),
     'Target Complete Date': getGeneral('Target Complete Date'),
