@@ -62,10 +62,12 @@ export async function loadProjectDataSupabase(
   month?: number,
 ): Promise<FinancialRow[]> {
   const cacheKey = `${projectId}-${year}-${month}`
-  if (rowCache.has(cacheKey)) {
-    console.log('DEBUG: returning cached data for', cacheKey, 'rows:', rowCache.get(cacheKey)!.length)
-    return rowCache.get(cacheKey)!
-  }
+  // TEMP: Disable cache for debugging
+  // if (rowCache.has(cacheKey)) {
+  //   console.log('DEBUG: returning cached data for', cacheKey, 'rows:', rowCache.get(cacheKey)!.length)
+  //   return rowCache.get(cacheKey)!
+  // }
+  console.log('DEBUG: cache MISS for', cacheKey, '- querying Supabase')
 
   const client = getSupabase()
   const cfg = getConfig()
