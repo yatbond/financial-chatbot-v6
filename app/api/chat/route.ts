@@ -92,15 +92,17 @@ export async function POST(request: NextRequest) {
 
     if (action === 'getStructure') {
       const client = makeClient()
-      const { data: projectData } = await client.from('projects').select('*')
-      const { data: viewData } = await client.from('latest_month_per_project').select('project_id, year, month')
+      const { data: projectData, error: projErr } = await client.from('projects').select('*')
+      if (projErr) console.error('getStructure projects error:', projErr)
+      const { data: viewData, error: viewErr } = await client.from('latest_month_per_project').select('project_id, year, month')
+      if (viewErr) console.error('getStructure view error:', viewErr)
       const folders: any = {}
       const projects: any = {}
       for (const v of (viewData || [])) {
-        const proj = (projectData || []).find((p: any) => p.project_id === v.project_id)
+        const proj = (projectData || []).find((p: any) => p.id === v.project_id)
         if (proj) {
-          projects[v.project_id] = { id: v.project_id, code: proj.project_code || v.project_id, name: proj.project_name, year: String(v.year), month: String(v.month), filename: v.project_id }
-          const folder = proj.folder_name || 'Uncategorized'
+          projects[v.project_id] = { id: v.project_id, code: proj.code || v.project_id, name: proj.name, year: String(v.year), month: String(v.month), filename: v.project_id }
+          const folder = 'Projects'
           if (!folders[folder]) folders[folder] = []
           folders[folder].push(v.project_id)
         }
