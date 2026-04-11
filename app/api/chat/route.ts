@@ -46,16 +46,20 @@ export async function POST(request: NextRequest) {
       // DEBUG: include raw data for the 4 key metrics
       const allFinStatusGp3 = rows
         .filter(r => r.sheetName === 'Financial Status' && r.itemCode === '3')
+      
+      // Check what rawFinancialType values we actually have
+      const rawTypes = new Set(allFinStatusGp3.map(r => r.rawFinancialType))
+      console.log('DEBUG unique rawFinancialType values:', JSON.stringify([...rawTypes]))
+      
       const debugMetrics = allFinStatusGp3
         .filter(r => {
-          const raw = r.rawFinancialType.toLowerCase()
+          const raw = (r.rawFinancialType || '').toLowerCase()
           return raw.includes('business plan') || raw.includes('projection') || raw.includes('audit') || raw.includes('cash flow')
         })
         .map(r => ({ raw: r.rawFinancialType, norm: r.financialType, val: r.value }))
       
       console.log('DEBUG allFinStatusGp3 count:', allFinStatusGp3.length)
       console.log('DEBUG debugMetrics count:', debugMetrics.length)
-      console.log('DEBUG sample rows:', JSON.stringify(allFinStatusGp3.slice(0, 5).map(r => ({ sheet: r.sheetName, raw: r.rawFinancialType, item: r.itemCode }))))
 
       return Response.json({
         metrics,
