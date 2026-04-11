@@ -142,7 +142,7 @@ export async function computeMetricsSupabase(
     'Business Plan GP': getValue('Financial Status', 'Business Plan', '3'),
     'Projected GP': getValue('Financial Status', 'Projection', '3'),
     'WIP GP': getValue('Financial Status', 'WIP', '3'),
-    'Cash Flow': getValue('Financial Status', 'Cash Flow', '7'),
+    'Cash Flow': getValue('Financial Status', 'Cash Flow', '3'),
     'Start Date': getGeneral('Start Date'),
     'Complete Date': getGeneral('Complete Date'),
     'Target Complete Date': getGeneral('Target Complete Date'),
