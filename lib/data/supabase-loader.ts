@@ -2,7 +2,8 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js'
 import { getConfig, normaliseFinancialType } from '../config/mappings'
 import type { FinancialRow, ProjectInfo, FolderStructure, Metrics } from './types'
 
-// Don't read env vars at module level - read them at request time
+const LOADER_VERSION = 'v6-20260411-RLS-fix'
+
 function getSupabase(): SupabaseClient {
   const SUPABASE_URL = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL!
   const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -10,6 +11,7 @@ function getSupabase(): SupabaseClient {
                        process.env.SUPABASE_ANON_KEY || 
                        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
   
+  console.log('LOADER_VERSION:', LOADER_VERSION)
   console.log('getSupabase: serviceRole=', !!SUPABASE_SERVICE_ROLE, 'keyLen=', SUPABASE_KEY.length)
   return createClient(SUPABASE_URL, SUPABASE_KEY, {
     auth: { autoRefreshToken: false, persistSession: false }
@@ -57,9 +59,9 @@ export async function loadProjectDataSupabase(
   const client = getSupabase()
   const cfg = getConfig()
 
-  console.log('loadProjectDataSupabase: project=', projectId, 'year=', year, 'month=', month)
+  console.log('loadProjectDataSupabase:', LOADER_VERSION, 'project=', projectId)
 
-  // Fetch data for this project
+  // Fetch data for this project - EXACT same query as test endpoint
   let query = client
     .from('financial_data')
     .select('*')
@@ -72,7 +74,7 @@ export async function loadProjectDataSupabase(
   
   console.log('loadProjectDataSupabase: error=', error, 'dataLen=', data?.length)
   if (data && data.length > 0) {
-    console.log('loadProjectDataSupabase: sample rows:', JSON.stringify(data.slice(0, 3)))
+    console.log('loadProjectDataSupabase: first 3 raw_financial_type:', JSON.stringify(data.slice(0, 3).map((r:any) => r.raw_financial_type)))
   }
   
   if (error) throw new Error(`Failed to load project data: ${error.message}`)
@@ -107,7 +109,7 @@ export async function computeMetricsSupabase(
   const rows = await loadProjectDataSupabase(projectId, year, month)
 
   const finStatusRows = rows.filter(r => r.sheetName === 'Financial Status' && r.itemCode === '3')
-  console.log('computeMetricsSupabase: totalRows=', rows.length, 'finStatusRows=', finStatusRows.length)
+  console.log('computeMetricsSupabase:', LOADER_VERSION, 'totalRows=', rows.length, 'finStatusRows=', finStatusRows.length)
   
   const allFinStatus = rows.filter(r => r.sheetName === 'Financial Status' && r.itemCode === '3')
   console.log('computeMetricsSupabase: allFinStatus raw types:', JSON.stringify(allFinStatus.map(r => r.rawFinancialType)))
