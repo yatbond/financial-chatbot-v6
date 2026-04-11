@@ -121,11 +121,14 @@ export async function computeMetricsSupabase(
   const rows = await loadProjectDataSupabase(projectId, year, month)
 
   const getValue = (sheet: string, ftype: string, item: string): number => {
-    const row = rows.find(r =>
+    const matches = rows.filter(r =>
       (r.sheetName === sheet || r.sheetName === ftype) &&
       r.financialType === ftype &&
       r.itemCode === item
     )
+    // Prefer non-zero values when multiple matches exist
+    const nonZeroRow = matches.find(r => parseFloat(r.value) !== 0)
+    const row = nonZeroRow || matches[0]
     return parseFloat(row?.value ?? '0') || 0
   }
 
