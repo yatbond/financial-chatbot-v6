@@ -48,8 +48,7 @@ export async function POST(request: NextRequest) {
         .filter(r => r.sheetName === 'Financial Status' && r.itemCode === '3')
       
       // Check what rawFinancialType values we actually have
-      const rawTypes = new Set(allFinStatusGp3.map(r => r.rawFinancialType))
-      console.log('DEBUG unique rawFinancialType values:', JSON.stringify([...rawTypes]))
+      const rawTypes = [...new Set(allFinStatusGp3.map(r => r.rawFinancialType))]
       
       const debugMetrics = allFinStatusGp3
         .filter(r => {
@@ -60,6 +59,7 @@ export async function POST(request: NextRequest) {
       
       console.log('DEBUG allFinStatusGp3 count:', allFinStatusGp3.length)
       console.log('DEBUG debugMetrics count:', debugMetrics.length)
+      console.log('DEBUG unique rawFinancialType values:', JSON.stringify(rawTypes))
 
       return Response.json({
         metrics,
