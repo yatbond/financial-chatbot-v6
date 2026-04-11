@@ -2,13 +2,14 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js'
 import { getConfig, normaliseFinancialType } from '../config/mappings'
 import type { FinancialRow, ProjectInfo, FolderStructure, Metrics } from './types'
 
-const SUPABASE_URL = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL!
-const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY
-const SUPABASE_KEY = SUPABASE_SERVICE_ROLE || 
-                     process.env.SUPABASE_ANON_KEY || 
-                     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-
+// Don't read env vars at module level - read them at request time
 function getSupabase(): SupabaseClient {
+  const SUPABASE_URL = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL!
+  const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY
+  const SUPABASE_KEY = SUPABASE_SERVICE_ROLE || 
+                       process.env.SUPABASE_ANON_KEY || 
+                       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  
   console.log('getSupabase: serviceRole=', !!SUPABASE_SERVICE_ROLE, 'keyLen=', SUPABASE_KEY.length)
   return createClient(SUPABASE_URL, SUPABASE_KEY, {
     auth: { autoRefreshToken: false, persistSession: false }
@@ -57,7 +58,6 @@ export async function loadProjectDataSupabase(
   const cfg = getConfig()
 
   console.log('loadProjectDataSupabase: project=', projectId, 'year=', year, 'month=', month)
-  console.log('loadProjectDataSupabase: serviceRole=', !!SUPABASE_SERVICE_ROLE)
 
   // Fetch data for this project
   let query = client
@@ -109,7 +109,6 @@ export async function computeMetricsSupabase(
   const finStatusRows = rows.filter(r => r.sheetName === 'Financial Status' && r.itemCode === '3')
   console.log('computeMetricsSupabase: totalRows=', rows.length, 'finStatusRows=', finStatusRows.length)
   
-  // Log all Financial Status rows with item_code=3
   const allFinStatus = rows.filter(r => r.sheetName === 'Financial Status' && r.itemCode === '3')
   console.log('computeMetricsSupabase: allFinStatus raw types:', JSON.stringify(allFinStatus.map(r => r.rawFinancialType)))
 
