@@ -149,4 +149,4 @@ export async function computeMetricsSupabase(
     'Time Consumed (%)': getGeneral('Time Consumed (%)'),
     'Target Completed (%)': getGeneral('Target Completed (%)'),
   }
-}
+}// rebuild trigger Sat Apr 11 14:05:39 HKT 2026
