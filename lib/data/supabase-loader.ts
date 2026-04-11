@@ -4,41 +4,28 @@ import type { FinancialRow, ProjectInfo, FolderStructure, Metrics } from './type
 
 const SUPABASE_URL = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL!
 // Server-side: use service role key to bypass RLS
-// Client-side: use anon key (with RLS restrictions)
 const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY
 const SUPABASE_KEY = SUPABASE_SERVICE_ROLE || 
                      process.env.SUPABASE_ANON_KEY || 
                      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 
 let supabase: SupabaseClient | null = null
-let supabaseServiceRole: SupabaseClient | null = null
 
 function getSupabase(): SupabaseClient {
-  if (SUPABASE_SERVICE_ROLE) {
-    // Use service role client with bypass RLS headers
-    if (!supabaseServiceRole) {
-      supabaseServiceRole = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE, {
-        auth: {
-          autoRefreshToken: false,
-          persistSession: false
-        },
-        headers: {
-          'apikey': SUPABASE_SERVICE_ROLE,
-          'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE}`
-        }
-      })
-    }
-    return supabaseServiceRole
-  }
-  
-  // Fallback to anon key
   if (!supabase) {
-    supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
+    console.log('DEBUG getSupabase: using service role:', !!SUPABASE_SERVICE_ROLE)
+    console.log('DEBUG getSupabase: key prefix:', SUPABASE_KEY.substring(0, 30))
+    supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false
+      }
+    })
   }
   return supabase
 }
 
-// Module-level cache
+// Module-level cache - DISABLED for debugging
 const rowCache = new Map<string, FinancialRow[]>()
 
 export async function scanStructureSupabase(): Promise<{ folders: FolderStructure; projects: Record<string, ProjectInfo> }> {
@@ -82,9 +69,8 @@ export async function loadProjectDataSupabase(
   month?: number,
 ): Promise<FinancialRow[]> {
   const cacheKey = `${projectId}-${year}-${month}`
-  // TEMP: Disable cache for debugging
-  console.log('DEBUG: cache MISS for', cacheKey, '- querying Supabase')
-  console.log('DEBUG: Using service role key:', !!SUPABASE_SERVICE_ROLE)
+  console.log('DEBUG loadProjectDataSupabase: cache MISS for', cacheKey)
+  console.log('DEBUG loadProjectDataSupabase: service role available:', !!SUPABASE_SERVICE_ROLE)
 
   const client = getSupabase()
   const cfg = getConfig()
@@ -102,7 +88,7 @@ export async function loadProjectDataSupabase(
 
   const { data, error } = await query.limit(10000)
   
-  // DEBUG: include raw Supabase response in return
+  // DEBUG: include raw Supabase response
   const debugInfo = {
     error,
     dataLength: data?.length || 0,
@@ -145,9 +131,6 @@ export async function computeMetricsSupabase(
   const finStatusRows = rows.filter(r => r.sheetName === 'Financial Status' && r.itemCode === '3')
   console.log('DEBUG computeMetricsSupabase: total rows:', rows.length, '| Financial Status item_code=3:', finStatusRows.length)
   console.log('DEBUG computeMetricsSupabase: rawFinancialType values:', JSON.stringify([...new Set(finStatusRows.map(r => r.rawFinancialType))]))
-  for (const r of finStatusRows) {
-    console.log('DEBUG row:', JSON.stringify({ sheet: r.sheetName, raw: r.rawFinancialType, norm: r.financialType, item: r.itemCode, val: r.value }))
-  }
 
   // v5-compatible: ALL GP metrics come from Financial Status sheet
   // using includes() matching on rawFinancialType
