@@ -68,6 +68,11 @@ export async function POST(request: NextRequest) {
                (r.rawFinancialType || '').toLowerCase().includes('cash flow')
       }))
 
+      // Get raw Supabase data for comparison
+      const rawSupabaseData = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/financial_data?select=raw_financial_type,item_code&project_id=eq.${projectId}${year ? `&year=eq.${year}` : ''}${month ? `&month=eq.${month}` : ''}&sheet_name=eq.Financial%20Status&item_code=eq.3`, {
+        headers: { apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY! }
+      }).then(r => r.json()).catch(() => [])
+
       return Response.json({
         metrics,
         debug: {
@@ -78,6 +83,7 @@ export async function POST(request: NextRequest) {
           debugMetrics,
           allFinStatusDebug,
           rawTypesCount: rawTypes.length,
+          rawSupabaseData: Array.isArray(rawSupabaseData) ? rawSupabaseData.slice(0, 20) : rawSupabaseData,
         },
       })
     }

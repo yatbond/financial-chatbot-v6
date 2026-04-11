@@ -94,7 +94,13 @@ export async function loadProjectDataSupabase(
 
   const { data, error } = await query.limit(10000)
   
-  console.log('DEBUG: Supabase response - error:', error, 'data length:', data?.length || 0)
+  // DEBUG: include raw Supabase response in return
+  const debugInfo = {
+    error,
+    dataLength: data?.length || 0,
+    sampleRawTypes: data?.slice(0, 10).map((r: any) => r.raw_financial_type) || [],
+  }
+  console.log('DEBUG: Supabase response:', JSON.stringify(debugInfo))
   
   if (error) throw new Error(`Failed to load project data: ${error.message}`)
   if (!data || data.length === 0) return []
