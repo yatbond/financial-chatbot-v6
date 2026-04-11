@@ -249,6 +249,20 @@ def parse_excel_file(excel_path: Path) -> List[Dict]:
     project_code = code_match.group(1) if code_match else '0000'
     project_name = code_match.group(2).strip() if code_match and code_match.group(2) else filename
     
+    # Extract metadata from first sheet (General info like Start Date, Complete Date, etc.)
+    metadata_rows = []
+    for sheet_name in wb.sheetnames:
+        ws = wb[sheet_name]
+        metadata_rows = extract_metadata(ws, report_year, report_month)
+        # Set project code/name
+        for row in metadata_rows:
+            row['project_code'] = project_code
+            row['project_name'] = project_name
+            row['source_file'] = excel_path.name
+        break  # Only extract from first sheet
+    
+    all_data.extend(metadata_rows)
+    
     # Parse each sheet
     for sheet_name in wb.sheetnames:
         ws = wb[sheet_name]
