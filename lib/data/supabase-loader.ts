@@ -122,7 +122,8 @@ export async function computeMetricsSupabase(
 
   // DEBUG: log what we're working with
   const finStatusRows = rows.filter(r => r.sheetName === 'Financial Status' && r.itemCode === '3')
-  console.log('DEBUG total rows:', rows.length, '| Financial Status item_code=3:', finStatusRows.length)
+  console.log('DEBUG computeMetricsSupabase: total rows:', rows.length, '| Financial Status item_code=3:', finStatusRows.length)
+  console.log('DEBUG computeMetricsSupabase: rawFinancialType values:', JSON.stringify([...new Set(finStatusRows.map(r => r.rawFinancialType))]))
   for (const r of finStatusRows) {
     console.log('DEBUG row:', JSON.stringify({ sheet: r.sheetName, raw: r.rawFinancialType, norm: r.financialType, item: r.itemCode, val: r.value }))
   }
