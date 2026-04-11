@@ -73,10 +73,15 @@ export async function loadProjectDataSupabase(
   month?: number,
 ): Promise<FinancialRow[]> {
   const cacheKey = `${projectId}-${year}-${month}`
-  if (rowCache.has(cacheKey)) return rowCache.get(cacheKey)!
+  if (rowCache.has(cacheKey)) {
+    console.log('DEBUG: returning cached data for', cacheKey, 'rows:', rowCache.get(cacheKey)!.length)
+    return rowCache.get(cacheKey)!
+  }
 
   const client = getSupabase()
   const cfg = getConfig()
+
+  console.log('DEBUG: Supabase query - project:', projectId, 'year:', year, 'month:', month)
 
   // Fetch data for this project with optional year/month filter
   let query = client
@@ -88,6 +93,9 @@ export async function loadProjectDataSupabase(
   if (month !== undefined) query = query.eq('month', month)
 
   const { data, error } = await query.limit(10000)
+  
+  console.log('DEBUG: Supabase response - error:', error, 'data length:', data?.length || 0)
+  
   if (error) throw new Error(`Failed to load project data: ${error.message}`)
   if (!data || data.length === 0) return []
 
