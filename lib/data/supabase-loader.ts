@@ -3,13 +3,17 @@ import { getConfig, normaliseFinancialType } from '../config/mappings'
 import type { FinancialRow, ProjectInfo, FolderStructure, Metrics } from './types'
 
 const SUPABASE_URL = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL!
-const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+// Server-side: use service role key to bypass RLS
+// Client-side: use anon key (with RLS restrictions)
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || 
+                     process.env.SUPABASE_ANON_KEY || 
+                     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 
 let supabase: SupabaseClient | null = null
 
 function getSupabase(): SupabaseClient {
   if (!supabase) {
-    supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+    supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
   }
   return supabase
 }
@@ -30,38 +34,22 @@ export async function scanStructureSupabase(): Promise<{ folders: FolderStructur
   const { data: viewData, error: viewError } = await client
     .from('latest_month_per_project')
     .select('project_id, year, month')
-
   if (viewError) throw new Error(`Failed to load view: ${viewError.message}`)
 
-  // Build a lookup: project_id -> {year, month}
-  const projectMonthMap = new Map<string, { year: number; month: number }>()
   for (const v of viewData) {
-    projectMonthMap.set(v.project_id, { year: v.year, month: v.month })
-  }
-
-  // Build projects and folders
-  for (const p of projectData) {
-    const key = `${p.code} - ${p.name}`
-    const latest = projectMonthMap.get(p.id) || { year: 2026, month: 2 }
-
-    projects[key] = {
-      id: p.id,
-      code: p.code,
-      name: p.name,
-      year: String(latest.year),
-      month: String(latest.month),
-      filename: '',
+    const proj = projectData.find((p: any) => p.project_id === v.project_id)
+    if (proj) {
+      projects[v.project_id] = {
+        id: v.project_id,
+        name: proj.project_name,
+        folder: proj.folder_name,
+        year: v.year,
+        month: v.month,
+      }
+      const folder = proj.folder_name || 'Uncategorized'
+      if (!folders[folder]) folders[folder] = []
+      folders[folder].push(v.project_id)
     }
-
-    const y = String(latest.year)
-    const m = String(latest.month)
-    if (!folders[y]) folders[y] = []
-    if (!folders[y].includes(m)) folders[y].push(m)
-  }
-
-  // Sort months within each year
-  for (const y of Object.keys(folders)) {
-    folders[y].sort((a, b) => parseInt(a) - parseInt(b))
   }
 
   return { folders, projects }
@@ -82,6 +70,7 @@ export async function loadProjectDataSupabase(
   const cfg = getConfig()
 
   console.log('DEBUG: Supabase query - project:', projectId, 'year:', year, 'month:', month)
+  console.log('DEBUG: Using SUPABASE_KEY (first 20 chars):', SUPABASE_KEY.substring(0, 20))
 
   // Fetch data for this project with optional year/month filter
   let query = client
@@ -174,4 +163,4 @@ export async function computeMetricsSupabase(
     'Time Consumed (%)': getGeneral('Time Consumed (%)'),
     'Target Completed (%)': getGeneral('Target Completed (%)'),
   }
-}// rebuild trigger Sat Apr 11 14:05:39 HKT 2026
+}
