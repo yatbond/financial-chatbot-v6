@@ -5,13 +5,33 @@ import type { FinancialRow, ProjectInfo, FolderStructure, Metrics } from './type
 const SUPABASE_URL = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL!
 // Server-side: use service role key to bypass RLS
 // Client-side: use anon key (with RLS restrictions)
-const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || 
+const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY
+const SUPABASE_KEY = SUPABASE_SERVICE_ROLE || 
                      process.env.SUPABASE_ANON_KEY || 
                      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 
 let supabase: SupabaseClient | null = null
+let supabaseServiceRole: SupabaseClient | null = null
 
 function getSupabase(): SupabaseClient {
+  if (SUPABASE_SERVICE_ROLE) {
+    // Use service role client with bypass RLS headers
+    if (!supabaseServiceRole) {
+      supabaseServiceRole = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE, {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false
+        },
+        headers: {
+          'apikey': SUPABASE_SERVICE_ROLE,
+          'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE}`
+        }
+      })
+    }
+    return supabaseServiceRole
+  }
+  
+  // Fallback to anon key
   if (!supabase) {
     supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
   }
@@ -63,17 +83,13 @@ export async function loadProjectDataSupabase(
 ): Promise<FinancialRow[]> {
   const cacheKey = `${projectId}-${year}-${month}`
   // TEMP: Disable cache for debugging
-  // if (rowCache.has(cacheKey)) {
-  //   console.log('DEBUG: returning cached data for', cacheKey, 'rows:', rowCache.get(cacheKey)!.length)
-  //   return rowCache.get(cacheKey)!
-  // }
   console.log('DEBUG: cache MISS for', cacheKey, '- querying Supabase')
+  console.log('DEBUG: Using service role key:', !!SUPABASE_SERVICE_ROLE)
 
   const client = getSupabase()
   const cfg = getConfig()
 
   console.log('DEBUG: Supabase query - project:', projectId, 'year:', year, 'month:', month)
-  console.log('DEBUG: Using SUPABASE_KEY (first 20 chars):', SUPABASE_KEY.substring(0, 20))
 
   // Fetch data for this project with optional year/month filter
   let query = client
@@ -115,7 +131,6 @@ export async function loadProjectDataSupabase(
     }
   })
 
-  rowCache.set(cacheKey, result)
   return result
 }
 
