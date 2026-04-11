@@ -18,26 +18,39 @@ import type { DetailContext } from '@/lib/pipeline/formatter'
 import type { FinancialRow } from '@/lib/data/types'
 
 export const dynamic = 'force-dynamic'
-const API_VERSION = 'v6-direct-query'
+const API_VERSION = 'v6-paginated'
 
 const sessionContexts = new Map<string, DetailContext>()
 
 function makeClient() {
   const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL!
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  console.log('makeClient: serviceRole=', !!process.env.SUPABASE_SERVICE_ROLE_KEY, 'keyLen=', key.length)
   return createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } })
 }
 
-async function loadRows(projectId: string, year?: number, month?: number): Promise<FinancialRow[]> {
-  const client = makeClient()
+// Paginate through ALL rows - Supabase default page is 1000
+async function loadAllRows(client: ReturnType<typeof makeClient>, projectId: string, year?: number, month?: number): Promise<any[]> {
+  const pageSize = 1000
+  let allData: any[] = []
+  let offset = 0
+  let hasMore = true
+
+  while (hasMore) {
+    let q = client.from('financial_data').select('*').eq('project_id', projectId).range(offset, offset + pageSize - 1)
+    if (year !== undefined) q = q.eq('year', year)
+    if (month !== undefined) q = q.eq('month', month)
+    const { data, error } = await q
+    if (error) throw new Error(error.message)
+    if (!data || data.length === 0) { hasMore = false; break }
+    allData = allData.concat(data)
+    if (data.length < pageSize) { hasMore = false; break }
+    offset += pageSize
+  }
+  return allData
+}
+
+function mapRows(data: any[]): FinancialRow[] {
   const cfg = getConfig()
-  let q = client.from('financial_data').select('*').eq('project_id', projectId)
-  if (year !== undefined) q = q.eq('year', year)
-  if (month !== undefined) q = q.eq('month', month)
-  const { data, error } = await q.limit(10000)
-  if (error) throw new Error(error.message)
-  if (!data) return []
   return data.map((row: any) => ({
     year: String(row.year),
     month: String(row.month),
@@ -97,7 +110,9 @@ export async function POST(request: NextRequest) {
 
     if (action === 'loadProject') {
       const { projectId, year, month } = body
-      const rows = await loadRows(projectId, year, month)
+      const client = makeClient()
+      const rawRows = await loadAllRows(client, projectId, year, month)
+      const rows = mapRows(rawRows)
       const metrics = calcMetrics(rows)
       const finStatus = rows.filter(r => r.sheetName === 'Financial Status' && r.itemCode === '3')
       return Response.json({
@@ -114,13 +129,17 @@ export async function POST(request: NextRequest) {
 
     if (action === 'metrics') {
       const { projectId, year, month } = body
-      const rows = await loadRows(projectId, year, month)
+      const client = makeClient()
+      const rawRows = await loadAllRows(client, projectId, year, month)
+      const rows = mapRows(rawRows)
       return Response.json({ metrics: calcMetrics(rows), version: API_VERSION })
     }
 
     if (action === 'query') {
       const { projectId, year, month, question, context: rawContext } = body
-      const rows = await loadRows(projectId, year, month)
+      const client = makeClient()
+      const rawRows = await loadAllRows(client, projectId, year, month)
+      const rows = mapRows(rawRows)
       const context: DetailContext | null = rawContext ?? sessionContexts.get(projectId) ?? null
       const q = question.trim().toLowerCase()
       const resp = await dispatchQuery(q, rows, context, projectId)
