@@ -42,6 +42,15 @@ export async function POST(request: NextRequest) {
 
       const uniqueItemCodes = [...new Set(rows.map(r => r.itemCode))].filter(Boolean).sort()
       const uniqueDataTypes = [...new Set(rows.map(r => r.friendlyName))].filter(Boolean).sort()
+      
+      // DEBUG: include raw data for the 4 key metrics
+      const debugMetrics = rows
+        .filter(r => r.sheetName === 'Financial Status' && r.itemCode === '3')
+        .filter(r => {
+          const raw = r.rawFinancialType.toLowerCase()
+          return raw.includes('business plan') || raw.includes('projection') || raw.includes('audit') || raw.includes('cash flow')
+        })
+        .map(r => ({ raw: r.rawFinancialType, norm: r.financialType, val: r.value }))
 
       return Response.json({
         metrics,
@@ -50,6 +59,7 @@ export async function POST(request: NextRequest) {
           projectId,
           uniqueItemCodes,
           uniqueDataTypes,
+          debugMetrics,
         },
       })
     }
