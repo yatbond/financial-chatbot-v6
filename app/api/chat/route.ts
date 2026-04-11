@@ -18,6 +18,8 @@ import type { FinancialRow } from '@/lib/data/types'
 
 export const dynamic = 'force-dynamic'
 
+const API_VERSION = 'v6-20260411-RLS-fix'
+
 // In-memory session context for detail drill-down (per-project, ephemeral)
 const sessionContexts = new Map<string, DetailContext>()
 
@@ -32,7 +34,7 @@ export async function POST(request: NextRequest) {
 
     if (action === 'getStructure') {
       const { folders, projects } = await scanStructureSupabase()
-      return Response.json({ folders, projects })
+      return Response.json({ folders, projects, version: API_VERSION })
     }
 
     if (action === 'loadProject') {
@@ -43,11 +45,9 @@ export async function POST(request: NextRequest) {
       const uniqueItemCodes = [...new Set(rows.map(r => r.itemCode))].filter(Boolean).sort()
       const uniqueDataTypes = [...new Set(rows.map(r => r.friendlyName))].filter(Boolean).sort()
       
-      // DEBUG: include raw data for the 4 key metrics
       const allFinStatusGp3 = rows
         .filter(r => r.sheetName === 'Financial Status' && r.itemCode === '3')
       
-      // Check what rawFinancialType values we actually have
       const rawTypes = [...new Set(allFinStatusGp3.map(r => r.rawFinancialType))]
       
       const debugMetrics = allFinStatusGp3
@@ -57,7 +57,6 @@ export async function POST(request: NextRequest) {
         })
         .map(r => ({ raw: r.rawFinancialType, norm: r.financialType, val: r.value }))
       
-      // Include ALL Financial Status + item_code=3 rows for debugging
       const allFinStatusDebug = allFinStatusGp3.map(r => ({ 
         raw: r.rawFinancialType, 
         norm: r.financialType, 
@@ -68,12 +67,18 @@ export async function POST(request: NextRequest) {
                (r.rawFinancialType || '').toLowerCase().includes('cash flow')
       }))
 
-      // Get raw Supabase data for comparison
+      // Get raw Supabase data for comparison - use SERVICE ROLE key if available
+      const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
       const rawSupabaseData = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/financial_data?select=raw_financial_type,item_code&project_id=eq.${projectId}${year ? `&year=eq.${year}` : ''}${month ? `&month=eq.${month}` : ''}&sheet_name=eq.Financial%20Status&item_code=eq.3`, {
-        headers: { apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY! }
+        headers: { 
+          apikey: SUPABASE_KEY,
+          Authorization: `Bearer ${SUPABASE_KEY}`,
+          Prefer: 'count=exact'
+        }
       }).then(r => r.json()).catch(() => [])
 
       return Response.json({
+        version: API_VERSION,
         metrics,
         debug: {
           totalRows: rows.length,
@@ -84,6 +89,7 @@ export async function POST(request: NextRequest) {
           allFinStatusDebug,
           rawTypesCount: rawTypes.length,
           rawSupabaseData: Array.isArray(rawSupabaseData) ? rawSupabaseData.slice(0, 20) : rawSupabaseData,
+          rawSupabaseDataCount: Array.isArray(rawSupabaseData) ? rawSupabaseData.length : 0,
         },
       })
     }
@@ -91,7 +97,7 @@ export async function POST(request: NextRequest) {
     if (action === 'metrics') {
       const { projectId, year, month } = body
       const metrics = await computeMetricsSupabase(projectId, year, month)
-      return Response.json({ metrics })
+      return Response.json({ metrics, version: API_VERSION })
     }
 
     if (action === 'query') {
@@ -101,14 +107,14 @@ export async function POST(request: NextRequest) {
 
       const q = question.trim().toLowerCase()
       const response = await dispatchQuery(q, rows, context, projectId)
-      return Response.json(response)
+      return Response.json({ ...response, version: API_VERSION })
     }
 
-    return Response.json({ error: `Unknown action: ${action}` }, { status: 400 })
+    return Response.json({ error: `Unknown action: ${action}`, version: API_VERSION }, { status: 400 })
   } catch (err) {
     console.error('[API error]', err)
     const msg = err instanceof Error ? err.message : String(err)
-    return Response.json({ error: msg }, { status: 500 })
+    return Response.json({ error: msg, version: API_VERSION }, { status: 500 })
   }
 }
 
@@ -119,7 +125,6 @@ async function dispatchQuery(
   projectId: string,
 ): Promise<{ response: string; candidates: object[]; context?: DetailContext }> {
 
-  // --- Shortcuts / help ---
   if (q === 'shortcuts' || q === 'help') {
     return { response: handleShortcuts(), candidates: [] }
   }
@@ -127,48 +132,39 @@ async function dispatchQuery(
     return { response: handleType(), candidates: [] }
   }
 
-  // --- Analyze ---
   if (q === 'analyze' || q === 'analyse') {
     return { response: handleAnalyze(rows), candidates: [] }
   }
 
-  // --- Risk ---
   if (q === 'risk') {
     return { response: handleRisk(rows), candidates: [] }
   }
 
-  // --- Cash flow ---
   if (q === 'cash flow' || q === 'cashflow' || q === 'cf') {
     return { response: handleCashFlow(rows), candidates: [] }
   }
 
-  // Tokenize + classify for all other commands
   const tokens = classify(tokenize(q))
   const resolved = resolve(tokens)
 
-  // --- Compare ---
   if (resolved.command === 'compare') {
     return { response: handleCompare(rows, resolved), candidates: [] }
   }
 
-  // --- Trend ---
   if (resolved.command === 'trend') {
     return { response: handleTrend(rows, resolved), candidates: [] }
   }
 
-  // --- List ---
   if (resolved.command === 'list') {
     const rest = q.replace(/^list\s*/, '').trim()
     return { response: handleList(rows, rest || undefined), candidates: [] }
   }
 
-  // --- Total ---
   if (resolved.command === 'total') {
     const rest = q.replace(/^total\s*/, '').trim()
     return { response: handleTotal(rows, rest), candidates: [] }
   }
 
-  // --- Detail ---
   if (resolved.command === 'detail') {
     const rest = q.replace(/^detail\s*/, '').trim()
     const result = handleDetail(rows, rest || undefined, context)
@@ -178,7 +174,6 @@ async function dispatchQuery(
     return { response: result.response, candidates: [], context: result.context }
   }
 
-  // --- General query through full pipeline ---
   const result = runQuery(q, rows)
   if (result.context) {
     sessionContexts.set(projectId, result.context)
