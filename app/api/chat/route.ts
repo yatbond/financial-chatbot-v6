@@ -57,9 +57,16 @@ export async function POST(request: NextRequest) {
         })
         .map(r => ({ raw: r.rawFinancialType, norm: r.financialType, val: r.value }))
       
-      console.log('DEBUG allFinStatusGp3 count:', allFinStatusGp3.length)
-      console.log('DEBUG debugMetrics count:', debugMetrics.length)
-      console.log('DEBUG unique rawFinancialType values:', JSON.stringify(rawTypes))
+      // Include ALL Financial Status + item_code=3 rows for debugging
+      const allFinStatusDebug = allFinStatusGp3.map(r => ({ 
+        raw: r.rawFinancialType, 
+        norm: r.financialType, 
+        val: r.value,
+        match: (r.rawFinancialType || '').toLowerCase().includes('business plan') || 
+               (r.rawFinancialType || '').toLowerCase().includes('projection') || 
+               (r.rawFinancialType || '').toLowerCase().includes('audit') || 
+               (r.rawFinancialType || '').toLowerCase().includes('cash flow')
+      }))
 
       return Response.json({
         metrics,
@@ -69,6 +76,8 @@ export async function POST(request: NextRequest) {
           uniqueItemCodes,
           uniqueDataTypes,
           debugMetrics,
+          allFinStatusDebug,
+          rawTypesCount: rawTypes.length,
         },
       })
     }
