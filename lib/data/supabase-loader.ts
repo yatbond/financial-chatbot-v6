@@ -9,23 +9,17 @@ const SUPABASE_KEY = SUPABASE_SERVICE_ROLE ||
                      process.env.SUPABASE_ANON_KEY || 
                      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 
-let supabase: SupabaseClient | null = null
-
+// Don't use singleton - create fresh client per request to pick up env var changes
 function getSupabase(): SupabaseClient {
-  if (!supabase) {
-    console.log('DEBUG getSupabase: using service role:', !!SUPABASE_SERVICE_ROLE)
-    console.log('DEBUG getSupabase: key prefix:', SUPABASE_KEY.substring(0, 30))
-    supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
-      auth: {
-        autoRefreshToken: false,
-        persistSession: false
-      }
-    })
-  }
-  return supabase
+  return createClient(SUPABASE_URL, SUPABASE_KEY, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false
+    }
+  })
 }
 
-// Module-level cache - DISABLED for debugging
+// Module-level cache - DISABLED
 const rowCache = new Map<string, FinancialRow[]>()
 
 export async function scanStructureSupabase(): Promise<{ folders: FolderStructure; projects: Record<string, ProjectInfo> }> {
@@ -69,13 +63,11 @@ export async function loadProjectDataSupabase(
   month?: number,
 ): Promise<FinancialRow[]> {
   const cacheKey = `${projectId}-${year}-${month}`
-  console.log('DEBUG loadProjectDataSupabase: cache MISS for', cacheKey)
+  console.log('DEBUG loadProjectDataSupabase: querying Supabase for', cacheKey)
   console.log('DEBUG loadProjectDataSupabase: service role available:', !!SUPABASE_SERVICE_ROLE)
 
   const client = getSupabase()
   const cfg = getConfig()
-
-  console.log('DEBUG: Supabase query - project:', projectId, 'year:', year, 'month:', month)
 
   // Fetch data for this project with optional year/month filter
   let query = client
@@ -88,13 +80,7 @@ export async function loadProjectDataSupabase(
 
   const { data, error } = await query.limit(10000)
   
-  // DEBUG: include raw Supabase response
-  const debugInfo = {
-    error,
-    dataLength: data?.length || 0,
-    sampleRawTypes: data?.slice(0, 10).map((r: any) => r.raw_financial_type) || [],
-  }
-  console.log('DEBUG: Supabase response:', JSON.stringify(debugInfo))
+  console.log('DEBUG: Supabase response - error:', error, 'data length:', data?.length || 0)
   
   if (error) throw new Error(`Failed to load project data: ${error.message}`)
   if (!data || data.length === 0) return []
@@ -127,20 +113,17 @@ export async function computeMetricsSupabase(
 ): Promise<Metrics> {
   const rows = await loadProjectDataSupabase(projectId, year, month)
 
-  // DEBUG: log what we're working with
   const finStatusRows = rows.filter(r => r.sheetName === 'Financial Status' && r.itemCode === '3')
-  console.log('DEBUG computeMetricsSupabase: total rows:', rows.length, '| Financial Status item_code=3:', finStatusRows.length)
+  console.log('DEBUG computeMetricsSupabase: Financial Status item_code=3:', finStatusRows.length)
   console.log('DEBUG computeMetricsSupabase: rawFinancialType values:', JSON.stringify([...new Set(finStatusRows.map(r => r.rawFinancialType))]))
 
   // v5-compatible: ALL GP metrics come from Financial Status sheet
-  // using includes() matching on rawFinancialType
   const gpFromFinStatus = (rawTypeContains: string): number => {
     const matches = rows.filter(r =>
       r.sheetName === 'Financial Status' &&
       r.rawFinancialType.toLowerCase().includes(rawTypeContains.toLowerCase()) &&
       r.itemCode === '3'
     )
-    console.log(`DEBUG gpFromFinStatus('${rawTypeContains}'): found ${matches.length} matches`)
     return matches.reduce((sum, r) => sum + (parseFloat(r.value) || 0), 0)
   }
 
