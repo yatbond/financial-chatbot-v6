@@ -117,7 +117,6 @@ export async function POST(request: NextRequest) {
         if (!folders[y]) folders[y] = []
         if (!folders[y].includes(m)) folders[y].push(m)
       }
-      }
       return Response.json({ folders, projects, version: API_VERSION })
     }
 
