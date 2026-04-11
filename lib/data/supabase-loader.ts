@@ -22,44 +22,46 @@ export async function scanStructureSupabase(): Promise<{ folders: FolderStructur
   const folders: FolderStructure = {}
   const projects: Record<string, ProjectInfo> = {}
 
-  const { data, error } = await client.from('projects').select('*')
-  if (error) throw new Error(`Failed to load projects: ${error.message}`)
+  // Fetch all projects
+  const { data: projectData, error: projError } = await client.from('projects').select('*')
+  if (projError) throw new Error(`Failed to load projects: ${projError.message}`)
 
-  for (const p of data) {
+  // Fetch latest year/month per project from view
+  const { data: viewData, error: viewError } = await client
+    .from('latest_month_per_project')
+    .select('project_id, year, month')
+
+  if (viewError) throw new Error(`Failed to load view: ${viewError.message}`)
+
+  // Build a lookup: project_id -> {year, month}
+  const projectMonthMap = new Map<string, { year: number; month: number }>()
+  for (const v of viewData) {
+    projectMonthMap.set(v.project_id, { year: v.year, month: v.month })
+  }
+
+  // Build projects and folders
+  for (const p of projectData) {
     const key = `${p.code} - ${p.name}`
+    const latest = projectMonthMap.get(p.id) || { year: 2026, month: 2 }
+
     projects[key] = {
       id: p.id,
       code: p.code,
       name: p.name,
-      year: '',   // filled from financial_data
-      month: '',
-      filename: '', // not needed for Supabase
+      year: String(latest.year),
+      month: String(latest.month),
+      filename: '',
     }
+
+    const y = String(latest.year)
+    const m = String(latest.month)
+    if (!folders[y]) folders[y] = []
+    if (!folders[y].includes(m)) folders[y].push(m)
   }
 
-  // Get available year/month combos
-  const { data: monthData } = await client
-    .from('financial_data')
-    .select('year, month')
-    .order('year', { ascending: true })
-    .order('month', { ascending: true })
-
-  if (monthData) {
-    const seen = new Set<string>()
-    for (const m of monthData) {
-      const y = String(m.year)
-      const mo = String(m.month)
-      const key = `${y}-${mo}`
-      if (!seen.has(key)) {
-        seen.add(key)
-        if (!folders[y]) folders[y] = []
-        if (!folders[y].includes(mo)) folders[y].push(mo)
-        // Update project entries with year/month
-        for (const p of Object.values(projects)) {
-          if (!p.year) { p.year = y; p.month = mo; }
-        }
-      }
-    }
+  // Sort months within each year
+  for (const y of Object.keys(folders)) {
+    folders[y].sort((a, b) => parseInt(a) - parseInt(b))
   }
 
   return { folders, projects }
@@ -76,6 +78,7 @@ export async function loadProjectDataSupabase(
   const client = getSupabase()
   const cfg = getConfig()
 
+  // Fetch data for this project with optional year/month filter
   let query = client
     .from('financial_data')
     .select('*')
@@ -84,7 +87,7 @@ export async function loadProjectDataSupabase(
   if (year !== undefined) query = query.eq('year', year)
   if (month !== undefined) query = query.eq('month', month)
 
-  const { data, error } = await query
+  const { data, error } = await query.limit(10000)
   if (error) throw new Error(`Failed to load project data: ${error.message}`)
   if (!data || data.length === 0) return []
 
