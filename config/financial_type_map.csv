@@ -1,0 +1,19 @@
+Raw_Financial_Type,Clean_Financial_Type,Acronyms
+Budget Tender,Budget Tender,tender|tender budget
+Budget 1st Working Budget,1st Working Budget,1st working|first working|1wb
+Budget Adjustment Cost/variation,*not used,
+Budget Revision as at,Latest Budget,Latest budget|budget|bt|revision|rev|rev as at|budget revision
+Business Plan,Business Plan,bp|business plan
+Audit Report (WIP),WIP,wip|audit|audit report
+Adjustment Cost/ variation,*not used,
+Projection as at,Projection,projected|projection
+Committed Value / Cost as at,Committed Cost,committed|committed cost|committed value
+Committed Value / Cost % of time elapse,*not used,
+Committed Value / Cost Balance,*not used,
+"Accrual 
+(Before Retention) as at",Accrual,accrual|accrued
+Cash Flow Actual received & paid as at,Cash Flow,cf|cashflow|cash flow|cash
+Cash Flow Actual received & paid % of time elapse,*not used,
+Cash Flow Balance to ,*not used,
+,,
+General,General,general|project info
