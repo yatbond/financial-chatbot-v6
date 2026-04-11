@@ -96,19 +96,27 @@ export async function POST(request: NextRequest) {
       if (projErr) console.error('getStructure projects error:', projErr)
       const { data: viewData, error: viewErr } = await client.from('latest_month_per_project').select('project_id, year, month')
       if (viewErr) console.error('getStructure view error:', viewErr)
+      // Build year→months folder structure for the frontend
       const folders: any = {}
       const projects: any = {}
+      const yearMonthSet = new Set<string>()
       for (const v of (viewData || [])) {
         const proj = (projectData || []).find((p: any) => p.id === v.project_id)
         if (proj) {
+          const y = String(v.year)
+          const m = String(v.month)
+          yearMonthSet.add(`${y}-${m}`)
           // Clean name: strip 'Financial Report YYYY-MM' suffix
-          let displayName = proj.name || ''
-          displayName = displayName.replace(/\s*Financial Report\s+\d{4}-\d{2}$/, '').trim() || proj.code || v.project_id
-          projects[v.project_id] = { id: v.project_id, code: proj.code || v.project_id, name: displayName, year: String(v.year), month: String(v.month), filename: v.project_id }
-          const folder = 'Projects'
-          if (!folders[folder]) folders[folder] = []
-          folders[folder].push(v.project_id)
+          let displayName = (proj.name || '').replace(/\s*Financial Report\s+\d{4}-\d{2}$/, '').trim() || proj.code || v.project_id
+          projects[v.project_id] = { id: v.project_id, code: proj.code || v.project_id, name: displayName, year: y, month: m, filename: v.project_id }
         }
+      }
+      // Build year→months from all available year/month combos
+      for (const ym of yearMonthSet) {
+        const [y, m] = ym.split('-')
+        if (!folders[y]) folders[y] = []
+        if (!folders[y].includes(m)) folders[y].push(m)
+      }
       }
       return Response.json({ folders, projects, version: API_VERSION })
     }
