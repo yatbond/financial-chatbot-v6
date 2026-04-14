@@ -89,11 +89,21 @@ export async function loadProjectDataSupabase(
   if (year !== undefined) query = query.eq('report_year', year)
   if (month !== undefined) query = query.eq('report_month', month)
 
-  const { data, error } = await query.limit(10000)
-  if (error) throw new Error(`Failed to load project data: ${error.message}`)
-  if (!data || data.length === 0) return []
+  // Paginate to bypass Supabase default 1000-row limit
+  const allData: any[] = []
+  let offset = 0
+  const pageSize = 1000
+  while (true) {
+    const { data, error } = await query.range(offset, offset + pageSize - 1)
+    if (error) throw new Error(`Failed to load project data: ${error.message}`)
+    if (!data || data.length === 0) break
+    allData.push(...data)
+    if (data.length < pageSize) break
+    offset += pageSize
+  }
+  if (allData.length === 0) return []
 
-  const result: FinancialRow[] = data.map((row: any) => {
+  const result: FinancialRow[] = allData.map((row: any) => {
     const normFType = normaliseFinancialType(row.raw_financial_type || row.financial_type, cfg)
     return {
       year: String(row.report_year),
