@@ -67,6 +67,8 @@ CREATE TABLE IF NOT EXISTS financial_data (
   raw_value TEXT,                       -- Original string (for dates, %, text)
   match_status TEXT,                    -- EXACT, FUZZY, UNMAPPED
   source_file TEXT,                     -- Original xlsx filename
+  friendly_name TEXT,                   -- Friendly name from line_items lookup
+  category TEXT,                        -- Category from line_items lookup
   created_at TIMESTAMPTZ DEFAULT NOW(),
   UNIQUE(project_id, report_year, report_month, data_month, financial_type, item_code)
 );

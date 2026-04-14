@@ -18,6 +18,7 @@ Usage:
 import os
 import sys
 import re
+import shutil
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, List, Tuple, Optional, Any
@@ -25,6 +26,14 @@ from typing import Dict, List, Tuple, Optional, Any
 import pandas as pd
 from openpyxl import load_workbook
 from supabase import create_client, Client
+
+# Support for old .xls files
+try:
+    import xlrd
+    HAS_XLRD = True
+except ImportError:
+    HAS_XLRD = False
+    print("[WARN] xlrd not installed - .xls files will be skipped")
 
 # ============================================================================
 # Configuration
@@ -41,7 +50,7 @@ if not SUPABASE_URL or not SUPABASE_KEY:
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-PROCESSING_DIR = Path('/mnt/g/My Drive/Ai Chatbot Knowledge Base/Processing')
+PROCESSING_DIR = Path(r'G:\My Drive\Ai Chatbot Knowledge Base\Processing')
 FINANCIAL_TYPE_CSV = PROCESSING_DIR / 'financial_type_map.csv'
 HEADINGS_CSV = PROCESSING_DIR / 'construction_headings_enriched.csv'
 
@@ -121,8 +130,12 @@ def sync_financial_types():
 
 
 def _sync_acronyms_from_ft(df):
-    """Sync acronyms for financial types."""
-    synced = 0
+    """Sync acronyms for financial types — batch mode."""
+    # Fetch all existing financial_type acronyms
+    existing = supabase.table('acronyms').select('acronym').eq('target_table', 'financial_type').execute()
+    existing_set = {(r['acronym']) for r in existing.data} if existing.data else set()
+
+    to_insert = []
     for _, row in df.iterrows():
         clean_name = str(row.get('Clean_Financial_Type', '')).strip()
         if not clean_name or clean_name == '*not used':
@@ -130,24 +143,16 @@ def _sync_acronyms_from_ft(df):
         acronyms_str = str(row.get('Acronyms', '')).strip()
         if not acronyms_str:
             continue
-
         for acronym in acronyms_str.split('|'):
             acronym = acronym.strip()
-            if not acronym:
-                continue
-            try:
-                existing = supabase.table('acronyms').select('id').eq('target_table', 'financial_type').eq('target_id', clean_name).eq('acronym', acronym).execute()
-                if not existing.data:
-                    supabase.table('acronyms').insert({
-                        'target_table': 'financial_type',
-                        'target_id': clean_name,
-                        'acronym': acronym,
-                    }).execute()
-                    synced += 1
-            except Exception:
-                pass
+            if acronym and acronym not in existing_set:
+                to_insert.append({'target_table': 'financial_type', 'target_id': clean_name, 'acronym': acronym})
+                existing_set.add(acronym)
 
-    print(f"  [OK] Synced {synced} financial_type acronyms")
+    if to_insert:
+        for i in range(0, len(to_insert), 50):
+            supabase.table('acronyms').insert(to_insert[i:i+50]).execute()
+    print(f"  [OK] Synced {len(to_insert)} financial_type acronyms")
 
 
 def sync_line_items():
@@ -159,6 +164,7 @@ def sync_line_items():
     df = pd.read_csv(HEADINGS_CSV)
     synced = 0
     acronym_count = 0
+    acronym_rows = []  # Collect acronym inserts for batch
 
     for _, row in df.iterrows():
         item_code = str(row.get('Item_Code', '')).strip()
@@ -200,23 +206,21 @@ def sync_line_items():
         except Exception as e:
             print(f"  [ERROR] Failed to sync line_item '{pk}': {e}")
 
-        # Sync acronyms for this line item
         if acronyms_str:
             for acronym in acronyms_str.split('|'):
                 acronym = acronym.strip()
-                if not acronym:
-                    continue
-                try:
-                    existing = supabase.table('acronyms').select('id').eq('target_table', 'line_item').eq('target_id', pk).eq('acronym', acronym).execute()
-                    if not existing.data:
-                        supabase.table('acronyms').insert({
-                            'target_table': 'line_item',
-                            'target_id': pk,
-                            'acronym': acronym,
-                        }).execute()
-                        acronym_count += 1
-                except Exception:
-                    pass
+                if acronym:
+                    acronym_rows.append({'target_table': 'line_item', 'target_id': pk, 'acronym': acronym})
+    if acronym_rows:
+        existing = supabase.table('acronyms').select('target_id, acronym').eq('target_table', 'line_item').execute()
+        existing_set = {(r['target_id'], r['acronym']) for r in existing.data} if existing.data else set()
+        to_insert = [r for r in acronym_rows if (r['target_id'], r['acronym']) not in existing_set]
+        if to_insert:
+            for i in range(0, len(to_insert), 50):
+                supabase.table('acronyms').insert(to_insert[i:i+50]).execute()
+        acronym_count = len(to_insert)
+    else:
+        acronym_count = 0
 
     print(f"  [OK] Synced {synced} line_items, {acronym_count} acronyms")
 
@@ -412,9 +416,19 @@ def parse_monthly_sheet(ws, header_row: int, report_year: int, report_month: int
     Each column = a data_month."""
     rows = []
 
+    # Safely get max_column (handle corrupted cells)
+    try:
+        max_col = ws.max_column
+    except (TypeError, AttributeError):
+        # Fallback: scan for last non-empty column in header row
+        max_col = 1
+        for c in range(1, 50):
+            if ws.cell(header_row, c).value is not None:
+                max_col = c
+
     # Build month column mapping
     month_cols = {}
-    for col in range(0, ws.max_column):
+    for col in range(0, max_col):
         val = ws.cell(header_row, col + 1).value
         if val:
             if hasattr(val, 'month'):
@@ -444,7 +458,7 @@ def parse_monthly_sheet(ws, header_row: int, report_year: int, report_month: int
         item_code, friendly_name, category, match_status = translate_data_type(trade_str)
 
         for month_num, col_idx in month_cols.items():
-            if col_idx + 1 > ws.max_column:
+            if col_idx + 1 > max_col:
                 continue
             value = ws.cell(row_idx, col_idx + 1).value
             if value is None or value == '':
@@ -472,6 +486,22 @@ def parse_monthly_sheet(ws, header_row: int, report_year: int, report_month: int
 
 def parse_excel_file(excel_path: Path) -> List[Dict]:
     """Parse an Excel file into rows for the v2 schema."""
+    # Handle .xls files (old format)
+    if excel_path.suffix.lower() == '.xls':
+        if not HAS_XLRD:
+            print(f"  [SKIP] .xls file requires xlrd: {excel_path.name}")
+            return []
+        try:
+            # Use pandas to read .xls, convert to intermediate format
+            xls = pd.ExcelFile(excel_path, engine='xlrd')
+            # Convert to temporary .xlsx-like structure using openpyxl
+            # Actually, let's just parse with pandas directly
+            return parse_excel_with_pandas(excel_path, xls)
+        except Exception as e:
+            print(f"  [ERROR] Failed to parse .xls {excel_path.name}: {e}")
+            return []
+    
+    # Handle .xlsx files (new format)
     try:
         wb = load_workbook(excel_path, data_only=True)
     except Exception as e:
@@ -499,9 +529,11 @@ def parse_excel_file(excel_path: Path) -> List[Dict]:
         'cash flow': 'Cash Flow',
         'cashflow': 'Cash Flow',
         'projection': 'Projection',
+        'projected cost': 'Projection',
         'committed cost': 'Committed Cost',
         'committed': 'Committed Cost',
         'accrual': 'Accrual',
+        "actual rec'd & cost": 'Accrual',
     }
 
     for sheet_name in wb.sheetnames:
@@ -563,8 +595,8 @@ def upsert_project(project_code: str, project_name: str) -> str:
     return result.data[0]['id']
 
 
-def upsert_rows(rows: List[Dict], batch_size: int = 500):
-    """UPSERT rows to Supabase with change logging."""
+def upsert_rows(rows: List[Dict], batch_size: int = 250):
+    """UPSERT rows to Supabase with change logging — batch mode."""
     if not rows:
         return
 
@@ -581,101 +613,87 @@ def upsert_rows(rows: List[Dict], batch_size: int = 500):
         project_id = upsert_project(project_code, project_name)
         print(f"  Project {project_code} ({project_name}): {len(project_rows)} rows")
 
-        for i in range(0, len(project_rows), batch_size):
-            batch = project_rows[i:i + batch_size]
+        # Fetch all existing rows for this project in one query
+        existing_data = supabase.table('financial_data').select('id, project_id, report_year, report_month, data_month, financial_type, item_code, value, source_file').eq('project_id', project_id).execute()
+        existing_map = {}
+        for r in (existing_data.data or []):
+            key = (r['report_year'], r['report_month'], r.get('data_month'), r['financial_type'], r['item_code'])
+            existing_map[key] = r
 
-            for row in batch:
-                # Check if row exists
-                query = (supabase.table('financial_data')
-                    .select('id, value, source_file')
-                    .eq('project_id', project_id)
-                    .eq('report_year', row['report_year'])
-                    .eq('report_month', row['report_month'])
-                    .eq('financial_type', row['financial_type'])
-                    .eq('item_code', row['item_code']))
+        to_upsert = []
+        change_logs = []
+        seen_keys = set()  # Deduplicate within this project (latest file wins)
 
-                # Handle data_month NULL
-                if row['data_month'] is None:
-                    query = query.is_('data_month', 'null')
-                else:
-                    query = query.eq('data_month', row['data_month'])
+        for row in project_rows:
+            key = (row['report_year'], row['report_month'], row['data_month'], row['financial_type'], row['item_code'])
+            
+            # Skip duplicates within same project (latest file wins - already sorted by filename)
+            if key in seen_keys:
+                continue
+            seen_keys.add(key)
+            
+            upsert_data = {
+                'project_id': project_id,
+                'report_year': row['report_year'],
+                'report_month': row['report_month'],
+                'data_month': row['data_month'],
+                'financial_type': row['financial_type'],
+                'item_code': row['item_code'],
+                'value': row['value'],
+                'raw_value': row['raw_value'],
+                'match_status': row['match_status'],
+                'source_file': row['source_file'],
+                'friendly_name': row.get('friendly_name', ''),
+                'category': row.get('category', ''),
+            }
 
-                existing = query.execute()
+            if key in existing_map:
+                # Row exists — check if value changed
+                old = existing_map[key]
+                old_value = old.get('value')
+                new_value = row['value']
 
-                insert_data = {
-                    'project_id': project_id,
-                    'report_year': row['report_year'],
-                    'report_month': row['report_month'],
-                    'data_month': row['data_month'],
-                    'financial_type': row['financial_type'],
-                    'item_code': row['item_code'],
-                    'value': row['value'],
-                    'raw_value': row['raw_value'],
-                    'match_status': row['match_status'],
-                    'source_file': row['source_file'],
-                    'friendly_name': row.get('friendly_name', ''),
-                    'category': row.get('category', ''),
-                }
-
-                if existing.data and len(existing.data) > 0:
-                    # Row exists — check if value changed
-                    old = existing.data[0]
-                    old_value = old.get('value')
-                    new_value = row['value']
-
-                    # Compare values
-                    values_differ = False
-                    if old_value is None and new_value is not None:
-                        values_differ = True
-                    elif old_value is not None and new_value is None:
-                        values_differ = True
-                    elif old_value is not None and new_value is not None:
-                        try:
-                            values_differ = abs(float(old_value) - float(new_value)) > 0.001
-                        except (ValueError, TypeError):
-                            values_differ = str(old_value) != str(new_value)
-
-                    if values_differ:
-                        # Log the change
-                        try:
-                            supabase.table('value_change_log').insert({
-                                'project_id': project_id,
-                                'report_year': row['report_year'],
-                                'report_month': row['report_month'],
-                                'data_month': row['data_month'],
-                                'financial_type': row['financial_type'],
-                                'item_code': row['item_code'],
-                                'old_value': old_value,
-                                'new_value': new_value,
-                                'old_source': old.get('source_file', ''),
-                                'new_source': row['source_file'],
-                            }).execute()
-                            total_changes += 1
-                        except Exception as e:
-                            print(f"    [WARN] Failed to log change: {e}")
-
-                    # Update the row
+                values_differ = False
+                if old_value is None and new_value is not None:
+                    values_differ = True
+                elif old_value is not None and new_value is None:
+                    values_differ = True
+                elif old_value is not None and new_value is not None:
                     try:
-                        supabase.table('financial_data').update({
-                            'value': new_value,
-                            'raw_value': row['raw_value'],
-                            'source_file': row['source_file'],
-                            'friendly_name': row.get('friendly_name', ''),
-                            'category': row.get('category', ''),
-                        }).eq('id', old['id']).execute()
-                    except Exception as e:
-                        print(f"    [ERROR] Update failed: {e}")
-                else:
-                    # Insert new row
-                    try:
-                        supabase.table('financial_data').insert(insert_data).execute()
-                    except Exception as e:
-                        print(f"    [ERROR] Insert failed: {e}")
+                        values_differ = abs(float(old_value) - float(new_value)) > 0.001
+                    except (ValueError, TypeError):
+                        values_differ = str(old_value) != str(new_value)
 
-                total_upserted += 1
+                if values_differ:
+                    change_logs.append({
+                        'project_id': project_id,
+                        'report_year': row['report_year'],
+                        'report_month': row['report_month'],
+                        'data_month': row['data_month'],
+                        'financial_type': row['financial_type'],
+                        'item_code': row['item_code'],
+                        'old_value': old_value,
+                        'new_value': new_value,
+                        'old_source': old.get('source_file', ''),
+                        'new_source': row['source_file'],
+                    })
 
-            if i + batch_size < len(project_rows):
-                print(f"    ... {total_upserted} processed so far")
+            to_upsert.append(upsert_data)
+
+        # Batch upsert all rows
+        if to_upsert:
+            for i in range(0, len(to_upsert), batch_size):
+                batch = to_upsert[i:i+batch_size]
+                (supabase.table('financial_data')
+                    .upsert(batch, on_conflict='project_id,report_year,report_month,data_month,financial_type,item_code')
+                    .execute())
+            total_upserted += len(to_upsert)
+
+        # Batch insert change logs
+        if change_logs:
+            for i in range(0, len(change_logs), batch_size):
+                supabase.table('value_change_log').insert(change_logs[i:i+batch_size]).execute()
+            total_changes += len(change_logs)
 
     print(f"\n  [OK] Upserted {total_upserted} rows, logged {total_changes} value changes")
 
@@ -685,10 +703,10 @@ def upsert_rows(rows: List[Dict], batch_size: int = 500):
 # ============================================================================
 
 def find_excel_files(input_dir: Path) -> List[Path]:
-    """Find all Excel files in directory."""
+    """Find all Excel files in directory (top-level only, skip subfolders like 'processed')."""
     excel_files = []
     for ext in ['*.xlsx', '*.xls']:
-        excel_files.extend(input_dir.rglob(ext))
+        excel_files.extend(input_dir.glob(ext))
     return sorted(excel_files)
 
 
@@ -725,12 +743,17 @@ def main():
         print("[WARN] No Excel files found.")
         return
 
+    processed_dir = input_dir / 'processed'
+    processed_dir.mkdir(exist_ok=True)
+
     all_rows = []
+    file_results = []  # (path, row_count)
     for i, excel_path in enumerate(excel_files, 1):
         print(f"\n  [{i}/{len(excel_files)}] {excel_path.name}")
         rows = parse_excel_file(excel_path)
         print(f"    Parsed {len(rows)} rows")
         all_rows.extend(rows)
+        file_results.append((excel_path, len(rows)))
 
     print(f"\n[SUMMARY] Total: {len(all_rows)} rows from {len(excel_files)} files")
 
@@ -740,6 +763,21 @@ def main():
     else:
         print("\n[STEP 3] Upserting to Supabase with change logging...")
         upsert_rows(all_rows)
+
+        # Step 4: Move successfully processed files to processed/ folder
+        print("\n[STEP 4] Moving processed files...")
+        moved = 0
+        for excel_path, row_count in file_results:
+            if row_count > 0:
+                dest = processed_dir / excel_path.name
+                if dest.exists():
+                    dest.unlink()  # Remove existing
+                shutil.move(str(excel_path), str(dest))
+                print(f"  Moved: {excel_path.name} -> processed/")
+                moved += 1
+            else:
+                print(f"  Skipped (0 rows): {excel_path.name}")
+        print(f"  Moved {moved} files to processed/")
 
     print("\n[DONE]")
 

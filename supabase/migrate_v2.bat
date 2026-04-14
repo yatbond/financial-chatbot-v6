@@ -10,7 +10,7 @@ REM      set SUPABASE_URL=https://brgpgwxzxryefulblbgx.supabase.co
 REM      set SUPABASE_KEY=your-service-role-key-here
 
 set SUPABASE_URL=https://brgpgwxzxryefulblbgx.supabase.co
-REM set SUPABASE_KEY=your-service-role-key-here
+set SUPABASE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJyZ3Bnd3h6eHJ5ZWZ1bGJsYmd4Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NTgxNDI3MiwiZXhwIjoyMDkxMzkwMjcyfQ.Y9Er-R2BTB7PK2l4vpP28gqWCklAegYJa5DhmSpfe_4
 
 if "%SUPABASE_KEY%"=="your-service-role-key-here" (
     echo ERROR: Set SUPABASE_KEY before running!
