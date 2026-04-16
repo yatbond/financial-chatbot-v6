@@ -5,8 +5,8 @@ const RISK_FTYPES = ['WIP', 'Committed Cost', 'Cash Flow']
 const KEY_CODES = ['3', '7']  // GP and Net Profit
 
 export function handleRisk(rows: FinancialRow[]): string {
-  const snapshotRows = rows.filter(r => r.dataMonth === null)
-  const bpGP = parseFloat(snapshotRows.find(r => r.financialType === 'Business Plan' && r.itemCode === '3')?.value ?? '0') || 0
+  const fsRows = rows.filter(r => r.sheetName === 'Financial Status')
+  const bpGP = parseFloat(fsRows.find(r => r.financialType === 'Business Plan' && r.itemCode === '3')?.value ?? '0') || 0
 
   const lines: string[] = ['⚠️ **Risk Analysis**', '']
 
@@ -18,7 +18,7 @@ export function handleRisk(rows: FinancialRow[]): string {
   for (const ftype of RISK_FTYPES) {
     lines.push(`**${ftype}:**`)
     for (const code of KEY_CODES) {
-      const row = snapshotRows.find(r => r.financialType === ftype && r.itemCode === code)
+      const row = fsRows.find(r => r.financialType === ftype && r.itemCode === code)
       if (!row) continue
       const val = parseFloat(row.value) || 0
       const diff = bpGP !== 0 ? val - bpGP : null

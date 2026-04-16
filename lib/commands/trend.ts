@@ -20,7 +20,7 @@ export function handleTrend(rows: FinancialRow[], query: ResolvedQuery): string 
 
   // Use snapshot rows filtered by financial type and item code
   const matchRows = rows.filter(r => {
-    if (r.dataMonth !== null) return false  // only snapshot data
+    if (r.sheetName !== 'Financial Status') return false
     if (ftype && r.financialType !== ftype) return false
     if (itemCode && r.itemCode !== itemCode) return false
     if (dataType && r.friendlyName.toLowerCase() !== dataType.toLowerCase()) return false

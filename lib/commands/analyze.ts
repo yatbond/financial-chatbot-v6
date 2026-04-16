@@ -22,7 +22,7 @@ const KEY_ITEMS = [
 export function handleAnalyze(rows: FinancialRow[]): string {
   // Use all snapshot rows (dataMonth is null) — no need to filter by sheetName
   // since sheetName now equals financialType (DB has no separate sheet_name column)
-  const snapshotRows = rows.filter(r => r.dataMonth === null)
+  const fsRows = rows.filter(r => r.sheetName === 'Financial Status' && r.dataMonth === null)
 
   const lines: string[] = ['📊 **Financial Analysis**', '']
 
@@ -30,7 +30,7 @@ export function handleAnalyze(rows: FinancialRow[]): string {
     lines.push(`**${item.label} (Item ${item.code})**`)
 
     for (const ftype of ANALYSIS_FTYPES) {
-      const row = snapshotRows.find(r => r.financialType === ftype.key && r.itemCode === item.code)
+      const row = fsRows.find(r => r.financialType === ftype.key && r.itemCode === item.code)
       const val = row ? parseFloat(row.value) || 0 : null
 
       if (val !== null) {

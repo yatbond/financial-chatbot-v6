@@ -15,6 +15,7 @@ export function handleTotal(rows: FinancialRow[], args: string): string {
 
   const parentCode = query.itemCode
   const ftype = query.financialType
+  const sheet = query.sheet ?? 'Financial Status'
 
   if (!parentCode) {
     return '❌ Specify an item to total. e.g. `total cost committed` or `total 2.1 wip`'
@@ -22,17 +23,18 @@ export function handleTotal(rows: FinancialRow[], args: string): string {
 
   const prefix = parentCode + '.'
   const children = rows.filter(r =>
+    r.sheetName === sheet &&
     (!ftype || r.financialType === ftype) &&
     r.itemCode.startsWith(prefix) &&
     !r.itemCode.slice(prefix.length).includes('.')  // direct children only
   )
 
   if (children.length === 0) {
-    return `❌ No sub-items found for ${parentCode} in ${ftype ?? 'all types'}.`
+    return `❌ No sub-items found for ${parentCode} in ${ftype ?? 'all types'} (${sheet}).`
   }
 
   let total = 0
-  const lines = [`📊 **Total for ${parentCode}** (${ftype ?? 'all types'})`, '']
+  const lines = [`📊 **Total for ${parentCode}** (${ftype ?? 'all types'}, ${sheet})`, '']
 
   for (const child of children) {
     const val = parseFloat(child.value) || 0

@@ -108,7 +108,7 @@ export async function loadProjectDataSupabase(
     return {
       year: String(row.report_year),
       month: String(row.report_month),
-      sheetName: normFType,  // Use financial type as sheet name (DB has no sheet_name column)
+      sheetName: 'Financial Status',  // All snapshot rows belong to Financial Status sheet
       financialType: normFType,
       rawFinancialType: row.raw_financial_type || row.financial_type,
       itemCode: row.item_code,
@@ -194,7 +194,7 @@ export async function loadMonthlyDataSupabase(
     return {
       year: String(row.report_year),
       month: String(row.report_month),
-      sheetName: normFType,  // Use financial type as sheet name
+      sheetName: normFType,  // Monthly data sheet = financial type (Cash Flow, Projection, etc.)
       financialType: normFType,
       rawFinancialType: row.raw_financial_type || row.financial_type,
       itemCode: row.item_code,
