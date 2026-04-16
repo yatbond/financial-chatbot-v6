@@ -12,9 +12,6 @@ export interface ResolvedQuery {
   // For compare command
   compareFrom?: { financialType: string }
   compareTo?: { financialType: string }
-  // Ambiguity flag — when true, the command should ask user to clarify
-  ambiguous?: boolean
-  ambiguousOptions?: string[]
 }
 
 export const DEFAULT_SHEET = 'Financial Status'
@@ -99,23 +96,14 @@ export function resolve(tokens: Token[]): ResolvedQuery {
     q.sheet = cleanTypeToSheetName(ftypeTokens[0].financialType!)
     q.financialType = ftypeTokens[0].financialType
   } else if (ftypeTokens.length === 1) {
-    // Rule 4: 1 ftype, no month → ambiguous
-    // "committed prelim" could mean:
-    //   a) Financial Status snapshot, Committed Cost type
-    //   b) Committed Cost monthly sheet (but which month?)
+    // Rule 4: 1 ftype, no month
     const ftype = ftypeTokens[0].financialType!
-    if (MONTHLY_TYPES.has(ftype)) {
-      // This type has both a snapshot view AND a monthly sheet
-      // Default to Financial Status snapshot (common case) but flag ambiguity
-      q.sheet = DEFAULT_SHEET
+    // If this is a trend command + monthly type, assume monthly sheet
+    if (q.command === 'trend' && MONTHLY_TYPES.has(ftype)) {
+      q.sheet = cleanTypeToSheetName(ftype)
       q.financialType = ftype
-      q.ambiguous = true
-      q.ambiguousOptions = [
-        `Financial Status (snapshot)`,
-        `${ftype} (monthly — specify a month)`,
-      ]
     } else {
-      // Types like WIP, Budget Tender, Latest Budget only appear in Financial Status
+      // Default to Financial Status snapshot
       q.sheet = DEFAULT_SHEET
       q.financialType = ftype
     }

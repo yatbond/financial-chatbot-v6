@@ -120,15 +120,6 @@ async function dispatchQuery(
   const tokens = classify(tokenize(q))
   const resolved = resolve(tokens)
 
-  // --- Handle ambiguity (spec Rule #6: never assume, always show options) ---
-  if (resolved.ambiguous && !resolved.month) {
-    const options = resolved.ambiguousOptions?.map((o, i) => `${i + 1}. ${o}`).join('\n') ?? ''
-    return {
-      response: `🤔 **Ambiguous query** — "${resolved.financialType}" appears in both the Financial Status snapshot and its own monthly sheet.\n\nDid you mean:\n${options}\n\n💡 Tip: Add a month to disambiguate (e.g. "${resolved.financialType?.toLowerCase()} prelim oct")`,
-      candidates: [],
-    }
-  }
-
   // --- Compare ---
   if (resolved.command === 'compare') {
     return { response: handleCompare(rows, resolved), candidates: [] }
