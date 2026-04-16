@@ -12,19 +12,35 @@ export interface ResolvedQuery {
   // For compare command
   compareFrom?: { financialType: string }
   compareTo?: { financialType: string }
+  // Ambiguity flag — when true, the command should ask user to clarify
+  ambiguous?: boolean
+  ambiguousOptions?: string[]
 }
 
 export const DEFAULT_SHEET = 'Financial Status'
 
+// Financial types that have monthly breakdown sheets
+const MONTHLY_TYPES = new Set(['Cash Flow', 'Projection', 'Committed Cost', 'Accrual'])
+
 /**
  * Resolve classified tokens into a ResolvedQuery.
  *
- * Sheet resolution rules (from spec):
- * 1. Count FINANCIAL_TYPE tokens
- * 2. count >= 2 → first ftype = SHEET, remaining = FINANCIAL_TYPE
- * 3. count == 1 AND month present → that ftype = SHEET (monthly sheet)
- * 4. count == 1 AND no month → SHEET = Financial Status, FINANCIAL_TYPE = that ftype
- * 5. count == 0 → SHEET = Financial Status, FINANCIAL_TYPE = undefined
+ * Sheet resolution rules (from spec #6):
+ *
+ * | Query                | Month? | Ftype?   | Action                                                                    |
+ * |----------------------|--------|----------|---------------------------------------------------------------------------|
+ * | committed prelim oct | Yes    | committed| Sheet = Committed Cost (monthly)                                          |
+ * | committed prelim     | No     | committed| Ask: Financial Status (snapshot) or Committed Cost (which month?)         |
+ * | projected gp         | No     | projected| Ask: Financial Status (snapshot) or Projection (which month?)             |
+ * | trend gp 8           | No (8=months) | No | Ask: Which financial type?                                              |
+ * | gp                   | No     | No       | Ask: Which financial type? Show all options                               |
+ * | prelim oct           | Yes    | No       | Ask: Which financial type? [Projection] [Committed] [Accrual] [Cash Flow]|
+ *
+ * Core rules:
+ * - 2+ ftype tokens → first = SHEET, remaining = FINANCIAL_TYPE
+ * - 1 ftype + month → monthly sheet (that ftype)
+ * - 1 ftype + no month → ambiguous (could be snapshot or monthly)
+ * - 0 ftype → Financial Status
  */
 export function resolve(tokens: Token[]): ResolvedQuery {
   const q: ResolvedQuery = {}
@@ -67,39 +83,58 @@ export function resolve(tokens: Token[]): ResolvedQuery {
   // --- Sheet resolution ---
   const hasMonth = q.month !== undefined
 
-  if (ftypeTokens.length >= 2) {
-    // Rule 2: 2+ ftype tokens → first = sheet, remaining = financial type filter
-    q.sheet = cleanTypeToSheetName(ftypeTokens[0].financialType!)
-    q.financialType = ftypeTokens[0].financialType
-  } else if (ftypeTokens.length === 1 && hasMonth) {
-    // Rule 3: 1 ftype + month → that ftype as sheet
-    q.sheet = cleanTypeToSheetName(ftypeTokens[0].financialType!)
-    q.financialType = ftypeTokens[0].financialType
-  } else if (ftypeTokens.length === 1) {
-    // Rule 4: 1 ftype, no month → Financial Status + ftype as filter
-    q.sheet = DEFAULT_SHEET
-    q.financialType = ftypeTokens[0].financialType
-  } else {
-    // Rule 5: no ftype → Financial Status
-    q.sheet = DEFAULT_SHEET
-  }
-
-  // Handle compare command: "compare X vs Y" or "compare X with Y"
   if (q.command === 'compare' && ftypeTokens.length >= 2) {
+    // Compare command: both types are from Financial Status snapshot
     q.compareFrom = { financialType: ftypeTokens[0].financialType! }
     q.compareTo = { financialType: ftypeTokens[1].financialType! }
     q.sheet = DEFAULT_SHEET
     q.financialType = undefined
+  } else if (ftypeTokens.length >= 2) {
+    // Rule 2: 2+ ftype tokens → first = sheet, remaining = financial type
+    q.sheet = cleanTypeToSheetName(ftypeTokens[0].financialType!)
+    q.financialType = ftypeTokens[0].financialType
+  } else if (ftypeTokens.length === 1 && hasMonth) {
+    // Rule 3: 1 ftype + month → monthly sheet
+    // "committed prelim oct" → Sheet = Committed Cost, month = 10
+    q.sheet = cleanTypeToSheetName(ftypeTokens[0].financialType!)
+    q.financialType = ftypeTokens[0].financialType
+  } else if (ftypeTokens.length === 1) {
+    // Rule 4: 1 ftype, no month → ambiguous
+    // "committed prelim" could mean:
+    //   a) Financial Status snapshot, Committed Cost type
+    //   b) Committed Cost monthly sheet (but which month?)
+    const ftype = ftypeTokens[0].financialType!
+    if (MONTHLY_TYPES.has(ftype)) {
+      // This type has both a snapshot view AND a monthly sheet
+      // Default to Financial Status snapshot (common case) but flag ambiguity
+      q.sheet = DEFAULT_SHEET
+      q.financialType = ftype
+      q.ambiguous = true
+      q.ambiguousOptions = [
+        `Financial Status (snapshot)`,
+        `${ftype} (monthly — specify a month)`,
+      ]
+    } else {
+      // Types like WIP, Budget Tender, Latest Budget only appear in Financial Status
+      q.sheet = DEFAULT_SHEET
+      q.financialType = ftype
+    }
+  } else {
+    // Rule 5: no ftype → Financial Status
+    q.sheet = DEFAULT_SHEET
   }
 
   return q
 }
 
 /**
- * Map a Clean_Financial_Type to its Sheet_Name in the data CSV.
- * Sheet names match the Clean_Financial_Type exactly — this is a direct passthrough.
- * All keyword→type mappings come from the config CSV; no hardcoded maps here.
+ * Map a Clean_Financial_Type to its Sheet_Name.
+ * For types that have their own monthly sheet, the sheet name equals the type.
+ * For types that only appear in Financial Status, the sheet name is "Financial Status".
  */
-export function cleanTypeToSheetName(cleanType: string): string {
-  return cleanType
+function cleanTypeToSheetName(cleanType: string): string {
+  if (MONTHLY_TYPES.has(cleanType)) {
+    return cleanType  // e.g. "Cash Flow" → Sheet "Cash Flow"
+  }
+  return cleanType  // Direct passthrough
 }

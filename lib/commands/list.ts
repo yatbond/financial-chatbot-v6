@@ -16,7 +16,7 @@ export function handleList(rows: FinancialRow[], arg?: string): string {
     const lines = ['📋 **Top-Level Items (Tier 1):**', '']
     for (const dt of tier1) {
       const match = rows.find(r =>
-        r.sheetName === 'Financial Status' &&
+        r.dataMonth === null &&
         r.financialType === 'Business Plan' &&
         r.itemCode === dt.itemCode
       )
@@ -52,7 +52,7 @@ export function handleList(rows: FinancialRow[], arg?: string): string {
   const lines = [`📋 **Sub-items of ${parentCode}:**`, '']
   for (const dt of children) {
     const match = rows.find(r =>
-      r.sheetName === 'Financial Status' &&
+      r.dataMonth === null &&
       r.itemCode === dt.itemCode
     )
     const val = match ? ` — ${formatCurrency(parseFloat(match.value) || 0)}` : ''

@@ -4,11 +4,26 @@ import type { ResolvedQuery } from './resolver'
 /**
  * Apply resolved query filters to the dataset.
  * Returns matching rows.
+ *
+ * Sheet resolution:
+ * - 'Financial Status' → filter for snapshot data (dataMonth is null)
+ * - Other sheet names (Cash Flow, Projection, etc.) → filter for monthly data (dataMonth not null)
+ *   and match financialType to the sheet name
  */
 export function filter(rows: FinancialRow[], query: ResolvedQuery): FinancialRow[] {
   return rows.filter(row => {
-    // 1. Sheet_Name filter
-    if (query.sheet && row.sheetName !== query.sheet) return false
+    // 1. Sheet filter
+    if (query.sheet) {
+      if (query.sheet === 'Financial Status') {
+        // Financial Status = snapshot data (dataMonth is null)
+        if (row.dataMonth !== null) return false
+      } else {
+        // Monthly sheets (Cash Flow, Projection, etc.)
+        // dataMonth must be set AND financialType must match the sheet
+        if (row.dataMonth === null) return false
+        if (row.sheetName !== query.sheet) return false
+      }
+    }
 
     // 2. Financial_Type filter (using normalised value)
     if (query.financialType && row.financialType !== query.financialType) return false

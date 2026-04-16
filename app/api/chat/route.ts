@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { scanStructureSupabase, loadProjectDataSupabase, computeMetricsSupabase } from '@/lib/data/supabase-loader'
+import { scanStructureSupabase, loadProjectDataSupabase, loadMonthlyDataSupabase, computeMetricsSupabase } from '@/lib/data/supabase-loader'
 import { runQuery } from '@/lib/pipeline/index'
 import { tokenize } from '@/lib/pipeline/tokenizer'
 import { classify } from '@/lib/pipeline/classifier'
@@ -22,7 +22,15 @@ export const dynamic = 'force-dynamic'
 const sessionContexts = new Map<string, DetailContext>()
 
 async function getProjectRows(projectId: string, year?: number, month?: number): Promise<FinancialRow[]> {
-  return loadProjectDataSupabase(projectId, year, month)
+  // Load both snapshot and monthly data
+  const snapshotRows = await loadProjectDataSupabase(projectId, year, month)
+  const monthlyTypes = ['Cash Flow', 'Projection', 'Committed Cost', 'Accrual']
+  const monthlyRows: FinancialRow[] = []
+  for (const ftype of monthlyTypes) {
+    const rows = await loadMonthlyDataSupabase(projectId, ftype, year, month)
+    monthlyRows.push(...rows)
+  }
+  return [...snapshotRows, ...monthlyRows]
 }
 
 export async function POST(request: NextRequest) {
@@ -111,6 +119,15 @@ async function dispatchQuery(
   // Tokenize + classify for all other commands
   const tokens = classify(tokenize(q))
   const resolved = resolve(tokens)
+
+  // --- Handle ambiguity (spec Rule #6: never assume, always show options) ---
+  if (resolved.ambiguous && !resolved.month) {
+    const options = resolved.ambiguousOptions?.map((o, i) => `${i + 1}. ${o}`).join('\n') ?? ''
+    return {
+      response: `🤔 **Ambiguous query** — "${resolved.financialType}" appears in both the Financial Status snapshot and its own monthly sheet.\n\nDid you mean:\n${options}\n\n💡 Tip: Add a month to disambiguate (e.g. "${resolved.financialType?.toLowerCase()} prelim oct")`,
+      candidates: [],
+    }
+  }
 
   // --- Compare ---
   if (resolved.command === 'compare') {

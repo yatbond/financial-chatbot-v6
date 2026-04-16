@@ -20,9 +20,8 @@ const KEY_ITEMS = [
 ]
 
 export function handleAnalyze(rows: FinancialRow[]): string {
-  // Use all snapshot rows (dataMonth is null) — no need to filter by sheetName
-  // since sheetName now equals financialType (DB has no separate sheet_name column)
-  const fsRows = rows.filter(r => r.sheetName === 'Financial Status' && r.dataMonth === null)
+  // Snapshot rows: dataMonth is null, these belong to the Financial Status sheet
+  const fsRows = rows.filter(r => r.dataMonth === null)
 
   const lines: string[] = ['📊 **Financial Analysis**', '']
 

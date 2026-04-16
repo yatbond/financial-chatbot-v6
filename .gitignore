@@ -2,3 +2,5 @@ node_modules/
 .next/
 .env.local
 .vercel
+.env.download
+SUPABASE_SERVICE_ROLE_KEY

@@ -17,7 +17,8 @@ export function handleCompare(rows: FinancialRow[], query: ResolvedQuery): strin
     return '❌ Specify two types to compare. e.g. `compare bp vs wip` or `compare committed with projection`'
   }
 
-  const fsRows = rows.filter(r => r.sheetName === 'Financial Status')
+  // Compare uses snapshot data (dataMonth is null)
+  const fsRows = rows.filter(r => r.dataMonth === null)
 
   const lines: string[] = [`📊 **${fromType} vs ${toType}**`, '']
 

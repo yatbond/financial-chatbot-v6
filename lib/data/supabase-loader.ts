@@ -105,10 +105,12 @@ export async function loadProjectDataSupabase(
 
   const result: FinancialRow[] = allData.map((row: any) => {
     const normFType = normaliseFinancialType(row.raw_financial_type || row.financial_type, cfg)
+    // Use sheet_name from DB if available, otherwise compute from data_month
+    const sheetName = row.sheet_name || (row.data_month === null ? 'Financial Status' : normFType)
     return {
       year: String(row.report_year),
       month: String(row.report_month),
-      sheetName: 'Financial Status',  // All snapshot rows belong to Financial Status sheet
+      sheetName,
       financialType: normFType,
       rawFinancialType: row.raw_financial_type || row.financial_type,
       itemCode: row.item_code,
@@ -191,10 +193,12 @@ export async function loadMonthlyDataSupabase(
   const cfg = getConfig()
   return data.map((row: any) => {
     const normFType = normaliseFinancialType(row.raw_financial_type || row.financial_type, cfg)
+    // Use sheet_name from DB if available, otherwise compute from data_month
+    const sheetName = row.sheet_name || normFType
     return {
       year: String(row.report_year),
       month: String(row.report_month),
-      sheetName: normFType,  // Monthly data sheet = financial type (Cash Flow, Projection, etc.)
+      sheetName,
       financialType: normFType,
       rawFinancialType: row.raw_financial_type || row.financial_type,
       itemCode: row.item_code,
