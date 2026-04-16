@@ -108,7 +108,7 @@ export async function loadProjectDataSupabase(
     return {
       year: String(row.report_year),
       month: String(row.report_month),
-      sheetName: row.sheet_name || 'Financial Status',
+      sheetName: normFType,  // Use financial type as sheet name (DB has no sheet_name column)
       financialType: normFType,
       rawFinancialType: row.raw_financial_type || row.financial_type,
       itemCode: row.item_code,
@@ -133,9 +133,8 @@ export async function computeMetricsSupabase(
 ): Promise<Metrics> {
   const rows = await loadProjectDataSupabase(projectId, year, month)
 
-  const getValue = (sheet: string, ftype: string, item: string): number => {
+  const getValue = (ftype: string, item: string): number => {
     const row = rows.find(r =>
-      (r.sheetName === sheet || r.sheetName === ftype) &&
       r.financialType === ftype &&
       r.itemCode === item
     )
@@ -144,7 +143,6 @@ export async function computeMetricsSupabase(
 
   const getGeneral = (item: string): string => {
     const row = rows.find(r =>
-      r.sheetName === 'Financial Status' &&
       r.financialType === 'General' &&
       r.itemCode === item
     )
@@ -152,10 +150,10 @@ export async function computeMetricsSupabase(
   }
 
   return {
-    'Business Plan GP': getValue('Financial Status', 'Business Plan', '3'),
-    'Projected GP': getValue('Financial Status', 'Projection', '3'),
-    'WIP GP': getValue('Financial Status', 'WIP', '3'),
-    'Cash Flow': getValue('Financial Status', 'Cash Flow', '3'),
+    'Business Plan GP': getValue('Business Plan', '3'),
+    'Projected GP': getValue('Projection', '3'),
+    'WIP GP': getValue('WIP', '3'),
+    'Cash Flow': getValue('Cash Flow', '3'),
     'Start Date': getGeneral('Start Date'),
     'Complete Date': getGeneral('Complete Date'),
     'Target Complete Date': getGeneral('Target Complete Date'),
@@ -190,21 +188,24 @@ export async function loadMonthlyDataSupabase(
   if (error) throw new Error(`Failed to load monthly data: ${error.message}`)
   if (!data || data.length === 0) return []
 
-  return data.map((row: any) => ({
-    year: String(row.report_year),
-    month: String(row.report_month),
-    sheetName: financialType,
-    financialType: row.financial_type,
-    rawFinancialType: row.financial_type,
-    itemCode: row.item_code,
-    friendlyName: row.friendly_name || '',
-    category: row.category || '',
-    value: String(row.value ?? row.raw_value ?? ''),
-    matchStatus: row.match_status || '',
-    sourceFile: row.source_file || '',
-    sourceSubfolder: '',
-    dataMonth: String(row.data_month),
-  }))
+  return data.map((row: any) => {
+    const normFType = normaliseFinancialType(row.raw_financial_type || row.financial_type, cfg)
+    return {
+      year: String(row.report_year),
+      month: String(row.report_month),
+      sheetName: normFType,  // Use financial type as sheet name
+      financialType: normFType,
+      rawFinancialType: row.raw_financial_type || row.financial_type,
+      itemCode: row.item_code,
+      friendlyName: row.friendly_name || '',
+      category: row.category || '',
+      value: String(row.value ?? row.raw_value ?? ''),
+      matchStatus: row.match_status || '',
+      sourceFile: row.source_file || '',
+      sourceSubfolder: '',
+      dataMonth: String(row.data_month),
+    }
+  })
 }
 
 /**

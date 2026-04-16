@@ -8,7 +8,9 @@ import type { ResolvedQuery } from './resolver'
 export function filter(rows: FinancialRow[], query: ResolvedQuery): FinancialRow[] {
   return rows.filter(row => {
     // 1. Sheet_Name filter
-    if (query.sheet && row.sheetName !== query.sheet) return false
+    //    When financialType is set, sheet filter is redundant (sheetName = financialType)
+    //    Only apply sheet filter when no financialType is specified
+    if (query.sheet && !query.financialType && row.sheetName !== query.sheet) return false
 
     // 2. Financial_Type filter (using normalised value)
     if (query.financialType && row.financialType !== query.financialType) return false
@@ -19,7 +21,10 @@ export function filter(rows: FinancialRow[], query: ResolvedQuery): FinancialRow
     }
 
     // 4. Data_Type / Friendly_Name filter
-    if (query.dataType && !matchDataType(row.friendlyName, query.dataType)) return false
+    //    Skip when itemCode is present (itemCode is more specific than friendlyName)
+    if (query.dataType && !query.itemCode) {
+      if (!matchDataType(row.friendlyName, query.dataType)) return false
+    }
 
     // 5. Month filter
     if (query.month !== undefined) {
