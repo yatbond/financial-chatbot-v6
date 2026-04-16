@@ -5,7 +5,7 @@ const RISK_FTYPES = ['WIP', 'Committed Cost', 'Cash Flow']
 const KEY_CODES = ['3', '7']  // GP and Net Profit
 
 export function handleRisk(rows: FinancialRow[]): string {
-  const fsRows = rows.filter(r => r.dataMonth === null)
+  const fsRows = rows.filter(r => r.dataMonth == null)
   const bpGP = parseFloat(fsRows.find(r => r.financialType === 'Business Plan' && r.itemCode === '3')?.value ?? '0') || 0
 
   const lines: string[] = ['⚠️ **Risk Analysis**', '']

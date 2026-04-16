@@ -21,7 +21,7 @@ const KEY_ITEMS = [
 
 export function handleAnalyze(rows: FinancialRow[]): string {
   // Snapshot rows: dataMonth is null, these belong to the Financial Status sheet
-  const fsRows = rows.filter(r => r.dataMonth === null)
+  const fsRows = rows.filter(r => r.dataMonth == null)
 
   const lines: string[] = ['📊 **Financial Analysis**', '']
 

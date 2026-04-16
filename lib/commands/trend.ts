@@ -27,10 +27,10 @@ export function handleTrend(rows: FinancialRow[], query: ResolvedQuery): string 
     // Filter by sheet/data source
     if (sheet === 'Financial Status') {
       // Snapshot rows only
-      if (r.dataMonth !== null) return false
+      if (r.dataMonth != null) return false
     } else {
       // Monthly rows for specific financial type
-      if (r.dataMonth === null) return false
+      if (r.dataMonth == null) return false
       if (r.sheetName !== sheet) return false
     }
 
@@ -63,7 +63,7 @@ export function handleTrend(rows: FinancialRow[], query: ResolvedQuery): string 
     const m = parseInt(r.month)
     const monthName = MONTH_NAMES[m] ?? `M${m}`
     const val = parseFloat(r.value) || 0
-    if (r.dataMonth !== null) {
+    if (r.dataMonth != null) {
       // Monthly data: show data_month
       const dm = parseInt(r.dataMonth)
       lines.push(`${r.year} ${MONTH_NAMES[dm] ?? `M${dm}`}: ${formatCurrency(val)}`)

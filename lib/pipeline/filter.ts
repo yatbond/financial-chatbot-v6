@@ -16,11 +16,11 @@ export function filter(rows: FinancialRow[], query: ResolvedQuery): FinancialRow
     if (query.sheet) {
       if (query.sheet === 'Financial Status') {
         // Financial Status = snapshot data (dataMonth is null)
-        if (row.dataMonth !== null) return false
+        if (row.dataMonth != null) return false
       } else {
         // Monthly sheets (Cash Flow, Projection, etc.)
         // dataMonth must be set AND financialType must match the sheet
-        if (row.dataMonth === null) return false
+        if (row.dataMonth == null) return false
         if (row.sheetName !== query.sheet) return false
       }
     }

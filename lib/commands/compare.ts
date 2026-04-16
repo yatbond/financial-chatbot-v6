@@ -18,7 +18,7 @@ export function handleCompare(rows: FinancialRow[], query: ResolvedQuery): strin
   }
 
   // Compare uses snapshot data (dataMonth is null)
-  const fsRows = rows.filter(r => r.dataMonth === null)
+  const fsRows = rows.filter(r => r.dataMonth == null)
 
   const lines: string[] = [`📊 **${fromType} vs ${toType}**`, '']
 
