@@ -21,20 +21,31 @@ export function handleTotal(rows: FinancialRow[], args: string): string {
     return '❌ Specify an item to total. e.g. `total cost committed` or `total 2.1 wip`'
   }
 
+  // Determine the filter: if sheet is Financial Status, filter by financialType + dataMonth==null
+  // If sheet is a monthly type, filter by sheetName + dataMonth!=null
   const prefix = parentCode + '.'
-  const children = rows.filter(r =>
-    r.sheetName === sheet &&
-    (!ftype || r.financialType === ftype) &&
-    r.itemCode.startsWith(prefix) &&
-    !r.itemCode.slice(prefix.length).includes('.')  // direct children only
-  )
+  const children = rows.filter(r => {
+    if (sheet === 'Financial Status') {
+      if (r.dataMonth != null) return false
+      if (ftype && r.financialType !== ftype) return false
+    } else {
+      if (r.dataMonth == null) return false
+      if (r.sheetName !== sheet) return false
+    }
+    if (!r.itemCode.startsWith(prefix)) return false
+    if (r.itemCode.slice(prefix.length).includes('.')) return false
+    return true
+  })
+
+  // Label: show ftype if available, sheet otherwise
+  const label = ftype ?? sheet
 
   if (children.length === 0) {
-    return `❌ No sub-items found for ${parentCode} in ${ftype ?? 'all types'} (${sheet}).`
+    return `❌ No sub-items found for ${parentCode} in ${label}.`
   }
 
   let total = 0
-  const lines = [`📊 **Total for ${parentCode}** (${ftype ?? 'all types'}, ${sheet})`, '']
+  const lines = [`📊 **Total for ${parentCode}** (${label})`, '']
 
   for (const child of children) {
     const val = parseFloat(child.value) || 0
