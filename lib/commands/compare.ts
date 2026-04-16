@@ -17,13 +17,13 @@ export function handleCompare(rows: FinancialRow[], query: ResolvedQuery): strin
     return '❌ Specify two types to compare. e.g. `compare bp vs wip` or `compare committed with projection`'
   }
 
-  const fsRows = rows.filter(r => r.sheetName === 'Financial Status')
+  const snapshotRows = rows.filter(r => r.dataMonth === null)
 
   const lines: string[] = [`📊 **${fromType} vs ${toType}**`, '']
 
   for (const item of KEY_ITEMS) {
-    const fromRow = fsRows.find(r => r.financialType === fromType && r.itemCode === item.code)
-    const toRow = fsRows.find(r => r.financialType === toType && r.itemCode === item.code)
+    const fromRow = snapshotRows.find(r => r.financialType === fromType && r.itemCode === item.code)
+    const toRow = snapshotRows.find(r => r.financialType === toType && r.itemCode === item.code)
 
     const fromVal = fromRow ? parseFloat(fromRow.value) || 0 : null
     const toVal = toRow ? parseFloat(toRow.value) || 0 : null

@@ -18,9 +18,9 @@ export function handleTrend(rows: FinancialRow[], query: ResolvedQuery): string 
     return '❌ Specify a metric. e.g. `trend gp 12`, `trend subcon committed 6`'
   }
 
-  // Use Financial Status rows that have monthly data (year/month vary)
+  // Use snapshot rows filtered by financial type and item code
   const matchRows = rows.filter(r => {
-    if (r.sheetName !== 'Financial Status') return false
+    if (r.dataMonth !== null) return false  // only snapshot data
     if (ftype && r.financialType !== ftype) return false
     if (itemCode && r.itemCode !== itemCode) return false
     if (dataType && r.friendlyName.toLowerCase() !== dataType.toLowerCase()) return false

@@ -46,7 +46,7 @@ export function handleDetail(
 
 function showContextChildren(rows: FinancialRow[], context: DetailContext): DetailResult {
   const lines = [
-    `📊 **Sub-items of ${context.itemCode}** (${context.financialType}, ${context.sheetName})`,
+    `📊 **Sub-items of ${context.itemCode}** (${context.financialType})`,
     '',
   ]
 
@@ -59,13 +59,12 @@ function showContextChildren(rows: FinancialRow[], context: DetailContext): Deta
   lines.push('💡 Type `detail N` to drill into sub-item N')
 
   // Build new context pointing to first child that has children
-  const newContext = buildChildContext(rows, context.children[0]?.code, context.sheetName, context.financialType)
+  const newContext = buildChildContext(rows, context.children[0]?.code, context.financialType)
 
   return { response: lines.join('\n'), context: newContext ?? context }
 }
 
 function drillByItemCode(rows: FinancialRow[], itemCode: string, prevContext: DetailContext | null): DetailResult {
-  const sheet = prevContext?.sheetName ?? 'Financial Status'
   const ftype = prevContext?.financialType
 
   const prefix = itemCode + '.'
@@ -74,14 +73,13 @@ function drillByItemCode(rows: FinancialRow[], itemCode: string, prevContext: De
   const matchFilter = (r: FinancialRow) =>
     r.itemCode.startsWith(prefix) &&
     r.itemCode.split('.').length === depth + 1 &&
-    r.sheetName === sheet &&
     (!ftype || r.financialType === ftype)
 
   const children = rows.filter(matchFilter)
 
   if (children.length === 0) {
     // No children → show the item itself
-    const self = rows.find(r => r.itemCode === itemCode && r.sheetName === sheet && (!ftype || r.financialType === ftype))
+    const self = rows.find(r => r.itemCode === itemCode && (!ftype || r.financialType === ftype))
     if (self) {
       return {
         response: `📊 **${self.friendlyName}** (${self.itemCode})\n\nValue: **${formatCurrency(parseFloat(self.value) || 0)}** ('000)\n\nNo sub-items.`,
@@ -90,7 +88,7 @@ function drillByItemCode(rows: FinancialRow[], itemCode: string, prevContext: De
     return { response: `❌ Item ${itemCode} not found.` }
   }
 
-  const lines = [`📊 **Sub-items of ${itemCode}** (${ftype ?? 'all types'}, ${sheet})`, '']
+  const lines = [`📊 **Sub-items of ${itemCode}** (${ftype ?? 'all types'})`, '']
   const childEntries = children.map((r, i) => ({
     code: r.itemCode,
     name: r.friendlyName,
@@ -107,7 +105,7 @@ function drillByItemCode(rows: FinancialRow[], itemCode: string, prevContext: De
 
   const newContext: DetailContext = {
     itemCode,
-    sheetName: sheet,
+    sheetName: ftype ?? '',  // Keep for API compatibility
     financialType: ftype ?? '',
     children: childEntries,
   }
@@ -118,7 +116,6 @@ function drillByItemCode(rows: FinancialRow[], itemCode: string, prevContext: De
 function buildChildContext(
   rows: FinancialRow[],
   itemCode: string | undefined,
-  sheet: string,
   ftype: string,
 ): DetailContext | null {
   if (!itemCode) return null
@@ -129,11 +126,10 @@ function buildChildContext(
     .filter(r =>
       r.itemCode.startsWith(prefix) &&
       r.itemCode.split('.').length === depth + 1 &&
-      r.sheetName === sheet &&
       r.financialType === ftype
     )
     .map(r => ({ code: r.itemCode, name: r.friendlyName, value: parseFloat(r.value) || 0 }))
 
   if (children.length === 0) return null
-  return { itemCode, sheetName: sheet, financialType: ftype, children }
+  return { itemCode, sheetName: ftype, financialType: ftype, children }
 }
