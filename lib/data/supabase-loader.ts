@@ -188,6 +188,7 @@ export async function loadMonthlyDataSupabase(
   if (error) throw new Error(`Failed to load monthly data: ${error.message}`)
   if (!data || data.length === 0) return []
 
+  const cfg = getConfig()
   return data.map((row: any) => {
     const normFType = normaliseFinancialType(row.raw_financial_type || row.financial_type, cfg)
     return {
